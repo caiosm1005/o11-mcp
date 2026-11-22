@@ -99,6 +99,13 @@ How the bridge fits with SKILL.md:
   by part of the name. It reads the module before and after: an element already referenced comes
   back as `AlreadyReferenced` with nothing changed, and one the module can't use (a client action
   in a Service module, for one) fails rather than reporting success.
+- **The platform's own elements** (`ListAppend`, `Site_Property`, `User`…) come under the producer
+  `(System)`, as in Manage Dependencies, and `addDependency` adds them to the module's `(System)`
+  reference. Bridges older than 0.3.1 listed them under `ServiceCenter`, and `addDependency`
+  answered "doesn't reference … afterwards, so nothing was added" even when it had added them. On
+  such a bridge, read the module's references back (`runQuery`
+  `Root { References { Name ServerActions { Name } Entities { Name } } }`) before you believe that
+  error.
 - **Comparing with an earlier version**: `getModuleVersions` then `downloadModule` with that
   version number gives you its OML file.
 
@@ -119,7 +126,7 @@ The bridge's code is in the fork's [`bridge/`](../bridge/) folder: a .NET startu
 inside Service Studio and serves MCP on `http://127.0.0.1:48720/mcp`. It needs macOS (Windows
 isn't scripted yet) and the .NET 10 SDK.
 
-**Current version: 0.3.0.** An installed bridge reports its version in `status` (`Bridge`) and
+**Current version: 0.3.1.** An installed bridge reports its version in `status` (`Bridge`) and
 in `~/Library/Application Support/ServiceStudioBridge/bin/VERSION`. An install without that file
 is older than 0.2.0.
 
