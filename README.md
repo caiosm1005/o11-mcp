@@ -49,6 +49,8 @@ This fork adds a second MCP server, the **Service Studio MCP Bridge**, for thing
 | Search the public elements other modules expose | Only the open module's references | `searchPublicElements` |
 | See which producers a module can reference | — | `listReferenceable` |
 | See an application's dependencies on other applications | — | `getApplicationDependencies` |
+| Open a module in Service Studio, with no file to clean up | Newer Service Studio builds only | `openModule` |
+| Add a dependency on another module's element to the module you have open | — (upstream issue #10) | `addDependency` |
 
 Every result names the environment it came from (host, name and user).
 
@@ -57,7 +59,6 @@ Every result names the environment it came from (host, name and user).
 - **The official server comes first.** Agents use a bridge tool only for something the official server can't do.
 - **The bridge gives way.** When an update to the official MCP covers a bridge function, the function is removed from the bridge and listed under *Migrated functions* in [`BRIDGE.md`](servicestudio-mcp-oml/BRIDGE.md). Agents then use the official tool, even when a prompt asks for the bridge one.
 - **Offered when you need it.** Ask for something the bridge covers while it isn't installed, and your agent offers to install it, even where the official docs call the request unsupported. It installs only after you say yes.
-- **Not covered yet:** adding a dependency and opening a module. For those, the official guidance still applies.
 
 **Requirements:** macOS and the .NET 10 SDK (Windows isn't scripted yet). Tested with Service Studio 11.55.97.
 
@@ -71,7 +72,7 @@ Then quit and reopen Service Studio, register the bridge with the command the sc
 
 **Update** by running the same script again from an up-to-date clone, then quitting and reopening Service Studio and starting a new agent session. It keeps your token, port and registration. Agents check the installed bridge's version against [`BRIDGE.md`](servicestudio-mcp-oml/BRIDGE.md) and offer the update when it's out of date.
 
-**Safety:** it doesn't delete or move modules or applications. It listens on `127.0.0.1` only and requires a token that only you can read. Other .NET apps never load it. Opt out for one launch with `SSBRIDGE_DISABLE=1`, or remove it with `bridge/scripts/uninstall.sh`.
+**Safety:** it never saves or publishes: what it changes (a module it opens, a dependency it adds) stays unsaved in Service Studio for you to keep or undo. It doesn't delete or move modules or applications. It listens on `127.0.0.1` only and requires a token that only you can read. Other .NET apps never load it. Opt out for one launch with `SSBRIDGE_DISABLE=1`, or remove it with `bridge/scripts/uninstall.sh`.
 
 More: [`servicestudio-mcp-oml/BRIDGE.md`](servicestudio-mcp-oml/BRIDGE.md) has the rules agents follow and how this fork is maintained; [`bridge/README.md`](bridge/README.md) covers how the bridge works, its safety, and its tests.
 

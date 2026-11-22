@@ -167,7 +167,8 @@ internal sealed class McpServer(int port, string token)
             ["serverInfo"] = new JsonObject { ["name"] = "servicestudio-bridge", ["version"] = Bridge.Version },
             ["instructions"] =
                 "Access to the OutSystems environment Service Studio is signed in to: applications, modules, " +
-                "module versions, consumers, public elements, referenceable producers, and module downloads (OML files). " +
+                "module versions, consumers, public elements, referenceable producers, and module downloads (OML files); " +
+                "it also opens modules in Service Studio and adds dependencies to an open module, without saving or publishing. " +
                 "Every result names the environment it came from; call status to see it before anything else. " +
                 "The bridge only fills gaps in Service Studio's own MCP server: when both offer the same thing, use Service Studio's.",
         };

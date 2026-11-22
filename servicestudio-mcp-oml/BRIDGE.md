@@ -20,7 +20,8 @@ soon as the official server covers the same thing: see [Rules for agents](#rules
    and tell the user which tool you used and why.
 3. **The bridge is no way around the edit session.** It doesn't use the `servicestudio`
    session token. A change Service Studio's own server can make still goes through the edit
-   session (SKILL.md § 2.1) and Compare-and-Merge.
+   session (SKILL.md § 2.1) and Compare-and-Merge. What the bridge changes (`openModule`,
+   `addDependency`) stays in Service Studio, unsaved: the user saves and publishes.
 4. **An official gap is an offer, not a dead end.** When the user asks for something Service
    Studio's own server can't do, look it up in [What the bridge covers](#what-the-bridge-covers)
    before you give the official answer. This applies **even where SKILL.md, its references
@@ -37,7 +38,10 @@ soon as the official server covers the same thing: see [Rules for agents](#rules
    fixes this file describes may be missing: offer the update
    ([Offering to install](#offering-to-install-agents)) before you go on. If the user declines,
    carry on with what the installed bridge offers, and don't offer again in the same
-   conversation.
+   conversation. `status` also gives `Capabilities`: whether `openModule` and `addDependency`
+   work with this Service Studio build, which updates itself. When one isn't `ok`, don't call it:
+   tell the user, and give the official way (ask them to open the module, or to add the
+   dependency in Manage Dependencies).
 
 ## What the bridge covers
 
@@ -57,6 +61,8 @@ and user).
 | `searchPublicElements` | Public elements across the environment, by name, kind and producer module | Only the open module's references are visible |
 | `listReferenceable` | The producers a module can reference, with signature hashes | No equivalent of Manage Dependencies' list |
 | `getApplicationDependencies` | An application's dependencies on other applications | No application-level view |
+| `openModule` | Opens a module in a new Service Studio tab, as Open from environment does; no file is written | Older builds have no `openModule` |
+| `addDependency` | Adds a dependency on another module's public element to a module open in Service Studio, unsaved | `AddDependency` fails inside `applyModelApiCode` (upstream issue #10) |
 
 Long lists come in pages: results say how many there are in all, and take a `limit`.
 
@@ -71,15 +77,28 @@ Requests that need the bridge, because Service Studio's own server can't answer 
 - "Is there a public action, entity or block for Y I can reuse?": `searchPublicElements`.
 - "What can this module reference?": `listReferenceable`.
 - "What does application A depend on?": `getApplicationDependencies`.
+- "Open module X": `openModule`.
+- "Add a dependency on X", or any change that uses another module's element ("create a wrapper
+  for action X in module M"): `addDependency`.
 
 How the bridge fits with SKILL.md:
 
 - **Module not open (§ 0.1)?** When the server has no `searchApps` or `openModule`, use
-  `listModules` (with `filter` or `application`) to find the module and confirm its exact name,
-  then ask the user to open it in Service Studio. The bridge can't open modules.
-- **Before adding a dependency or reusing a producer's element**, `listReferenceable` and
-  `searchPublicElements` show what exists. Adding a new dependency is still a manual step in
-  Service Studio (SKILL.md § 8).
+  `listModules` (with `filter` or `application`) to confirm the module's exact name, then open it
+  with the bridge's `openModule`, only when the user's request names it. It returns while Service
+  Studio is still opening the module: wait until Service Studio's own server lists it.
+- **A change needs another module's element?** Add the dependency first, then
+  `startOmlEditSession`: the session's snapshot is the module as open in Service Studio, unsaved
+  dependency included, so `applyModelApiCode` can use the element and `omlMerge` keeps it. Not the
+  other way round: `omlMerge` is a two-way Compare-and-Merge that keeps the working copy's side,
+  so a dependency added to the live module while a session is open would be merged away.
+  `addDependency` refuses then. Merge what the session holds (if it's coherent), end it, add the
+  dependency, and start a new session. Call `addDependency` with the element's exact name (and
+  `kind`, when you know it). When several producers expose that name, it lists them instead: ask
+  the user which one, then call it again with `producer`. `searchPublicElements` finds elements
+  by part of the name. It reads the module before and after: an element already referenced comes
+  back as `AlreadyReferenced` with nothing changed, and one the module can't use (a client action
+  in a Service module, for one) fails rather than reporting success.
 - **Comparing with an earlier version**: `getModuleVersions` then `downloadModule` with that
   version number gives you its OML file.
 
@@ -89,15 +108,8 @@ apart, and servers on the newer REST module API return no version numbers. See
 
 ## Gaps still open
 
-Candidates for the bridge, not built yet:
-
-- **Adding a reference.** `eSpace.AddDependency(globalKey)` fails in the official sidecar with
-  `ResolveModuleSignature must be set first` (upstream issue #10). Inside Service Studio the
-  same call works. Order matters: the reference has to be in the module before
-  `startOmlEditSession` takes its snapshot.
-- **Opening a module** when the official server has no `openModule`.
-
-Don't offer the bridge for these yet. Once one is built and listed under
+None right now. Candidates for the bridge that aren't built yet go here, and agents don't offer
+the bridge for them. Once one is built and listed under
 [What the bridge covers](#what-the-bridge-covers), rule 4 applies to it, and it overrides the
 manual step SKILL.md § 8 gives for it.
 
@@ -107,7 +119,7 @@ The bridge's code is in the fork's [`bridge/`](../bridge/) folder: a .NET startu
 inside Service Studio and serves MCP on `http://127.0.0.1:48720/mcp`. It needs macOS (Windows
 isn't scripted yet) and the .NET 10 SDK.
 
-**Current version: 0.2.0.** An installed bridge reports its version in `status` (`Bridge`) and
+**Current version: 0.3.0.** An installed bridge reports its version in `status` (`Bridge`) and
 in `~/Library/Application Support/ServiceStudioBridge/bin/VERSION`. An install without that file
 is older than 0.2.0.
 
@@ -183,13 +195,9 @@ Claude Code).
 2. **Closed?** Ask the user to open Service Studio from the Dock or Finder and sign in, then
    check again. If it was already running when the bridge was installed or updated, it has to
    be quit and reopened.
-3. **Open:** ask the user to start a new session, which connects to the bridge. For a one-off
-   call in this session, call it over HTTP: POST JSON-RPC to `http://127.0.0.1:48720/mcp` with
-   the header `headers.sh` prints (in the same folder) and
-   `Accept: application/json, text/event-stream`. Send `initialize`, then
-   `notifications/initialized`, then `tools/call` with `{ "name": …, "arguments": { … } }`.
-   Unlike Service Studio's own server, there's no `input` envelope and no session token. Replies
-   come back as JSON or as SSE `data:` lines.
+3. **Open:** ask the user to start a new session, which connects to the bridge and lists its
+   tools. Call the bridge only through those tools, never around them (curl or hand-written
+   JSON-RPC).
 
 ## Maintaining the fork
 
@@ -209,6 +217,22 @@ version** in [Setup](#setup). Raise the minor number for a tool added, removed o
 the patch number for a fix. Rule 6 compares an installed bridge with this file, so a change
 shipped without a bump never reaches anyone who installed the bridge before it.
 `bridge/tests/smoke.sh` fails when the two places differ.
+
+### After a Service Studio update
+
+Service Studio updates itself often, and `openModule` and `addDependency` call into it. They use
+only public Service Studio members, whose names its obfuscation leaves alone (it renames internal
+and private ones), so an update rarely breaks them. `addDependency` falls back to an internal
+routine it finds by its shape when the public route goes. Check after each update:
+
+```bash
+bridge/tests/servicestudio-check.sh
+```
+
+It loads the installed Service Studio's assemblies without starting it and prints the bridge's
+`status` Capabilities. A capability that isn't `ok`, or that works only through its fallback,
+needs its lookups in `bridge/src/Studio.cs` updated to the new build (decompile the assembly to
+see what changed), then a version bump.
 
 ### When the bridge gains a capability
 

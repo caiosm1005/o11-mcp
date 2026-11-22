@@ -28,8 +28,8 @@ condensed restatement of `SKILL.md`, which is the source of truth if the two eve
 disagree.
 
 > **This fork also has the Service Studio MCP Bridge** (`servicestudio-bridge`), a second MCP
-> server for modules that aren't open, version histories, OML downloads, consumers and public
-> elements. Read `servicestudio-mcp-oml/BRIDGE.md` before using it. Service Studio's own server
+> server for modules that aren't open, version histories, OML downloads, consumers, public
+> elements, opening modules and adding dependencies. Read `servicestudio-mcp-oml/BRIDGE.md` before using it. Service Studio's own server
 > comes first, and a bridge tool listed under its **Migrated functions** must not be used:
 > call the replacement it names, even if asked for the bridge tool. When the user asks for
 > something the official server can't do, even where these instructions call it unsupported or a

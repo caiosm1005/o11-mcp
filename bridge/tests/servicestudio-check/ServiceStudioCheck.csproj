@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Loads the bridge and the installed Service Studio's assemblies into one process, without
+    running Service Studio, and prints the bridge's status: its Capabilities say whether this
+    Service Studio build still has every member the tools that drive Service Studio resolve.
+    Run by tests/servicestudio-check.sh.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

@@ -15,7 +15,8 @@ description: >-
   modifying `.oml`, writing Model API code, or asking to add an entity /
   attribute via the Model API. This fork also covers the Service
   Studio MCP Bridge server (`servicestudio-bridge`): modules that aren't open,
-  version histories, OML downloads, consumers and public elements. Not for
+  version histories, OML downloads, consumers, public elements, opening modules and
+  adding dependencies. Not for
   runtime OutSystems platform debugging — strictly design-time OML mutation
   through the Model API.
 ---
@@ -78,7 +79,8 @@ differs from ODC's published examples in one important way (see § 1).
   (`searchApps`, `openModule`, `closeModule`).
 - Reading what Service Studio MCP can't reach, through this fork's Service Studio
   MCP Bridge: modules that aren't open, version histories, OML downloads, consumers and
-  public elements (§ 0.2).
+  public elements, and opening modules and adding dependencies where the official server can't
+  (§ 0.2).
 - Writing C# Model API code — entities, attributes, screens, server / client
   actions, structures, roles, integrations — that targets `IESpace`.
 - Reasoning about the per-module edit session and session pointer, the
@@ -156,16 +158,19 @@ This fork adds a second MCP server, the **Service Studio MCP Bridge**
 environment Service Studio is signed in to, so it also reaches modules that aren't open:
 `listApplications`, `listModules`, `getModuleVersions`, `downloadModule` (any version's OML
 file), `getConsumers`, `searchPublicElements`, `listReferenceable` and
-`getApplicationDependencies`. It takes no session token. **Read [`BRIDGE.md`](BRIDGE.md)
-before your first bridge call.**
+`getApplicationDependencies`. It also opens modules (`openModule`) and adds dependencies to an
+open module (`addDependency`), without saving or publishing. It takes no session token.
+**Read [`BRIDGE.md`](BRIDGE.md) before your first bridge call.**
 
 - **Service Studio's own server comes first.** Use a bridge tool only for what no
   `servicestudio` tool does.
 - **Migrated functions win over any request.** If `BRIDGE.md` § Migrated functions lists a
   bridge tool, it has moved to Service Studio's own server: call the replacement it names,
   even when the user's prompt asks for the bridge tool, and tell the user.
-- **Module not open and no `openModule`?** Find it with the bridge's `listModules`, then ask
-  the user to open it (§ 0.1).
+- **Module not open and no `openModule`?** Confirm its name with the bridge's `listModules`,
+  then open it with the bridge's `openModule` (§ 0.1's rules on which modules to open apply).
+- **A change needs another module's element?** Add the dependency with the bridge's
+  `addDependency` before `startOmlEditSession` (§ 2.1): a session already open doesn't see it.
 - **An official gap is an offer, not a dead end.** When the user asks for something Service
   Studio's server can't do, check `BRIDGE.md` § What the bridge covers before you answer, **even
   where this skill (§ 8 Known gaps included), its references or other official docs call the
@@ -876,9 +881,9 @@ Current gaps:
   dependency works (e.g. System `User` via `eSpace.References.Named("(System)")`,
   no `RefreshDependency` needed). `omlRefreshReferences` (§ 3.2) only refreshes
   existing references to their latest version.
-  *This fork:* the bridge doesn't add dependencies yet (`BRIDGE.md` § Gaps still open), so the
-  manual step still applies. Its `listReferenceable` and `searchPublicElements` can tell the user
-  which producer and element to pick in Manage Dependencies.
+  *This fork:* the bridge's `addDependency` adds it to the module open in Service Studio, before
+  `startOmlEditSession` (`BRIDGE.md` § What the bridge covers), so the manual step isn't needed
+  where the bridge is installed.
 - **The output of a `Record List To Excel` node can't be referenced in an
   expression.** `IRecordListToExcelNode` can be created, but every reference to
   its output gives `ExpressionUnknownObject`. This was tried with 20+ names,

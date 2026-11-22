@@ -7,7 +7,7 @@
 
 MCP access to the OutSystems 11 environment that Service Studio is signed in to, so
 a coding agent can list applications and modules, read version histories, consumers and public
-elements, and download any module version, all without a database connection or a person
+elements, download any module version, open modules and add dependencies to an open one, all without a database connection or a person
 clicking through Service Studio.
 
 It's a .NET startup hook. Service Studio loads it at start through `DOTNET_STARTUP_HOOKS`, and
@@ -32,6 +32,8 @@ or a session secret.
 | `getApplicationDependencies` | An application's dependencies on other applications |
 | `listReferenceable` | The producers a module can reference, with signature hashes |
 | `downloadModule` | A module's OML file, published, latest or any version number, and its path |
+| `openModule` | Opens a module in a new Service Studio tab, as *Open from environment* does (no file written) |
+| `addDependency` | Adds a dependency on another module's public element to a module open in Service Studio (unsaved) |
 
 Every result says which environment it came from: host, display name and user.
 
@@ -47,6 +49,8 @@ Service Studio is signed in to several at once, the tools ask for a `host` inste
 
 ## Safety
 
+- **Never saves or publishes.** `openModule` and `addDependency` change only what's open in
+  Service Studio, as unsaved edits; you save and publish.
 - **No deletes or moves.** Service Studio's services can also delete and move modules and
   applications; the bridge exposes none of that.
 - **Your access, nothing more.** It acts as the user Service Studio is signed in as, so it can
@@ -56,7 +60,8 @@ Service Studio is signed in to several at once, the tools ask for a `host` inste
   foreign `Host`.
 - **Fails soft.** Nothing from Service Studio is bound at compile time: every member is looked
   up by name when a tool runs. A Service Studio update that renames something makes that tool
-  answer with an error; Service Studio itself keeps starting normally.
+  answer with an error; Service Studio itself keeps starting normally. `status` says up front
+  whether `openModule` and `addDependency` work with the running build (`Capabilities`).
 - **Leaves other apps alone.** `DOTNET_STARTUP_HOOKS` reaches every .NET app you open, and a
   hook an app's runtime can't load stops that app from starting. The loader targets .NET
   Standard 2.0, so apps on any runtime load it; anywhere but Service Studio it returns at once,
@@ -125,7 +130,14 @@ bridge/tests/smoke.sh
 bridge/tests/install-roundtrip.sh
 ```
 
+```bash
+bridge/tests/servicestudio-check.sh
+```
+
 `smoke.sh` loads the hook into a fake process named `ServiceStudio` and checks the HTTP and MCP
 surface. It also checks that the hook stays out of other processes, and that apps on .NET 8 still
 start with it (skipped when no .NET 8 runtime is installed). `install-roundtrip.sh` runs the install and uninstall scripts against a temporary home
 folder with a stand-in `launchctl`. Neither one touches Service Studio or your login environment.
+`servicestudio-check.sh` loads the installed Service Studio's assemblies, without starting it, and
+checks that `openModule` and `addDependency` still find every Service Studio member they use: run
+it after each Service Studio update.

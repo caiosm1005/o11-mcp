@@ -24,6 +24,7 @@ Note the distinction: working **on** this repo means editing the skill content. 
 This fork adds [`bridge/`](./bridge/), a .NET MCP server that runs inside Service Studio, and
 [`servicestudio-mcp-oml/BRIDGE.md`](./servicestudio-mcp-oml/BRIDGE.md), which explains it to
 agents. `bridge/` is the one place with a build and tests (`bridge/tests/smoke.sh`,
-`bridge/tests/install-roundtrip.sh`); the skill-content rules above don't apply to its code.
+`bridge/tests/install-roundtrip.sh`, and `bridge/tests/servicestudio-check.sh` against the
+installed Service Studio); the skill-content rules above don't apply to its code.
 Whenever you update the fork from upstream, follow BRIDGE.md § Maintaining the fork: remove every
 bridge function the official server now covers, and record it under § Migrated functions.

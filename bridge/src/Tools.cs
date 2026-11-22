@@ -6,7 +6,8 @@ internal static class Tools
 {
     private sealed record Parameter(string Name, string Type, string Description, bool Required = false);
 
-    private sealed record Tool(string Name, string Description, Parameter[] Parameters, Func<JsonObject, object?> Run, bool WritesFiles = false);
+    /// <summary>ReadOnly false: the tool writes a file or changes what's open in Service Studio.</summary>
+    private sealed record Tool(string Name, string Description, Parameter[] Parameters, Func<JsonObject, object?> Run, bool ReadOnly = true);
 
     private static readonly Parameter Host = new("host", "string", "Environment host name. Only needed when Service Studio is signed in to several environments; by default the bridge uses the one it's signed in to.");
 
@@ -19,7 +20,8 @@ internal static class Tools
     private static readonly Tool[] All =
     [
         new("status",
-            "The bridge and Service Studio versions, and each Service Studio window: its module, the environment it's signed in to (host and name) and the user. Call it first.",
+            "The bridge and Service Studio versions, each Service Studio window (its module, the environment it's signed in to, host and name, and the user), " +
+            "and Capabilities: whether openModule and addDependency work with this Service Studio build. Call it first.",
             [],
             _ => Studio.Status()),
         new("listApplications",
@@ -62,7 +64,29 @@ internal static class Tools
                 new("version", "string", "\"published\" (default), \"latest\", or a version number from getModuleVersions."),
                 new("outputDir", "string", "Absolute folder to save the file in. Defaults to the bridge's downloads folder.")],
             a => Studio.DownloadModule(Text(a, "host"), Required(a, "module"), Text(a, "version"), Text(a, "outputDir")),
-            WritesFiles: true),
+            ReadOnly: false),
+        new("openModule",
+            "Opens a module in Service Studio as Open from environment does: Service Studio downloads it into a new tab itself, so no file is written. " +
+            "Use it only when Service Studio's own server has no openModule, and only for a module the user's request names. " +
+            "It returns once Service Studio starts opening the module: wait until Service Studio's own server lists it before working on it.",
+            [Host, Module],
+            a => Studio.OpenModule(Text(a, "host"), Required(a, "module")),
+            ReadOnly: false),
+        new("addDependency",
+            "Adds a dependency on another module's public element (an action, entity, structure, block…) to a module open in Service Studio, " +
+            "as Search in other modules › Add dependency does. It finds the element by its exact name across the environment; when several " +
+            "producers expose that name, it lists them instead: ask the user which one, then pass its producer. The open module gets an unsaved " +
+            "change; nothing is saved or published. Add dependencies before startOmlEditSession: it refuses while Service Studio's own server " +
+            "has an edit session or unmerged changes on the module, because that session's next omlMerge would remove the dependency. " +
+            "It checks the module before and after: an element already referenced comes back as AlreadyReferenced, and one the module can't use " +
+            "(a client action in a Service module, for one) fails instead of reporting success.",
+            [Host,
+                new("module", "string", "The module open in Service Studio that gets the dependency.", Required: true),
+                new("element", "string", "The public element's exact name.", Required: true),
+                new("producer", "string", "The producer module that exposes it (exact name), when several do."),
+                new("kind", "string", "The element's kind, as searchPublicElements reports it (Action, Entity, Structure, WebBlock…), when one name has several kinds.")],
+            a => Studio.AddDependency(Text(a, "host"), Required(a, "module"), Required(a, "element"), Text(a, "producer"), Text(a, "kind")),
+            ReadOnly: false),
     ];
 
     public static JsonArray Definitions() => new(All.Select(t => (JsonNode?)new JsonObject
@@ -72,7 +96,7 @@ internal static class Tools
         ["inputSchema"] = Schema(t.Parameters),
         ["annotations"] = new JsonObject
         {
-            ["readOnlyHint"] = !t.WritesFiles,
+            ["readOnlyHint"] = t.ReadOnly,
             ["destructiveHint"] = false,
             ["idempotentHint"] = true,
             ["openWorldHint"] = true,
