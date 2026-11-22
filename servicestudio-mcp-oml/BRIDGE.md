@@ -103,8 +103,9 @@ How the bridge fits with SKILL.md:
   version number gives you its OML file.
 
 Known limitations: two modules with the same name (an espace and an extension, say) can't be told
-apart, and servers on the newer REST module API return no version numbers. See
-[`bridge/README.md`](../bridge/README.md) for the rest.
+apart, and servers on the newer REST module API return no version numbers. `getConsumers` finds
+no consumers for an extension (verified 2026-11-22 on one that dozens of modules use), so it can't
+tell which modules use one. See [`bridge/README.md`](../bridge/README.md) for the rest.
 
 ## Gaps still open
 
