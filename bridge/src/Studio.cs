@@ -159,9 +159,11 @@ internal static class Studio
     /// (OutSystems.Model, the API applyModelApiCode runs): an element under a reference carries a
     /// global key made of the producer's module key and the element's own key. Service Studio's
     /// IGlobalKey only serializes (newer Model APIs also split it), so its text must contain a form
-    /// of each key: the ObjectKey text or the GUID.
+    /// of each key: the ObjectKey text or the GUID. Every reference is searched, not only the one
+    /// named after the producer: the keys alone identify the element, and the reference's name can
+    /// differ from the producer's, as (System) does from ServiceCenter (SystemProducer).
     /// </summary>
-    private static bool IsReferenced(object eSpace, string producerName, object producerKey, object elementKey)
+    private static bool IsReferenced(object eSpace, object producerKey, object elementKey)
     {
         var espaceInterface = eSpace.GetType().GetInterfaces().FirstOrDefault(i => i.FullName == "OutSystems.Model.IESpace")
             ?? throw new BridgeException("the module doesn't implement the Model API's IESpace");
@@ -178,9 +180,8 @@ internal static class Studio
         var elementForms = Forms(elementKey);
 
         var references = Reflect.Enumerate(
-                (new[] { espaceInterface }.Concat(espaceInterface.GetInterfaces()).Select(t => t.GetProperty("References")).FirstOrDefault(p => p != null)
-                    ?? throw new BridgeException("IESpace.References is missing")).GetValue(eSpace))
-            .Where(r => string.Equals(Reflect.TryGet(r, "Name") as string, producerName, StringComparison.OrdinalIgnoreCase));
+            (new[] { espaceInterface }.Concat(espaceInterface.GetInterfaces()).Select(t => t.GetProperty("References")).FirstOrDefault(p => p != null)
+                ?? throw new BridgeException("IESpace.References is missing")).GetValue(eSpace));
         foreach (var reference in references)
         {
             foreach (var item in Reflect.Enumerate(descendants.Invoke(reference, null)).Where(owner.IsInstanceOfType))
@@ -350,10 +351,10 @@ internal static class Studio
         var matches = Run(() => Reflect.Enumerate(Reflect.Call(ApplicationService(connection), "GetPublicElements", null, null, null)))
             .Where(e => string.Equals(Reflect.TryGet(e, "Name") as string, element, StringComparison.OrdinalIgnoreCase))
             .Where(e => wantedKind == null || string.Equals(ElementKind(Reflect.TryGet(e, "Type")?.ToString()), wantedKind, StringComparison.OrdinalIgnoreCase))
-            .Where(e => producer == null || string.Equals(Reflect.TryGet(e, "ApplicationName") as string, producer, StringComparison.OrdinalIgnoreCase))
+            .Where(e => FromProducer(e, producer))
             .Where(e => KeyId(Reflect.TryGet(e, "ApplicationKey")) != moduleKey)
             .ToList();
-        string Describe(object e) => $"{Reflect.TryGet(e, "Name")} ({ElementKind(Reflect.TryGet(e, "Type")?.ToString())}) in {Reflect.TryGet(e, "ApplicationName")}";
+        string Describe(object e) => $"{Reflect.TryGet(e, "Name")} ({ElementKind(Reflect.TryGet(e, "Type")?.ToString())}) in {ProducerName(e)}";
         if (matches.Count == 0)
         {
             throw new BridgeException($"No other module exposes a public element named {element}"
@@ -368,7 +369,7 @@ internal static class Studio
         }
 
         var match = matches[0];
-        var producerName = Reflect.TryGet(match, "ApplicationName") as string ?? string.Empty;
+        var producerName = ProducerName(match) ?? string.Empty;
         var label = $"Adding {element} from {producerName} to {module}";
         var producerKey = Reflect.Get(match, "ApplicationKey") ?? throw new BridgeException("The public element has no producer key.");
         var elementKey = Reflect.Get(match, "Key") ?? throw new BridgeException("The public element has no key.");
@@ -386,7 +387,7 @@ internal static class Studio
         {
             try
             {
-                return IsReferenced(eSpace, producerName, producerKey, elementKey);
+                return IsReferenced(eSpace, producerKey, elementKey);
             }
             catch (Exception ex)
             {
@@ -426,7 +427,8 @@ internal static class Studio
             SetMember(request, "elementKey", Reflect.Get(match, "Key")?.ToString());
             SetMember(request, "producerKey", Reflect.Get(match, "ApplicationKey")?.ToString());
             SetMember(request, "name", Reflect.TryGet(match, "Name") as string, required: false);
-            SetMember(request, "producerName", producerName, required: false);
+            // The service's own name for the producer (ServiceCenter, not (System)), as the routine received it before.
+            SetMember(request, "producerName", Reflect.TryGet(match, "ApplicationName") as string, required: false);
             var requests = Array.CreateInstance(elementType, 1);
             requests.SetValue(request, 0);
 
@@ -493,13 +495,13 @@ internal static class Studio
         return Scoped(connection, Page(Run(() => Reflect.Enumerate(Reflect.Call(ApplicationService(connection), "GetPublicElements", null, null, null)))
             .Where(e => Matches(Reflect.TryGet(e, "Name") as string, text))
             .Where(e => wantedKind == null || string.Equals(ElementKind(Reflect.TryGet(e, "Type")?.ToString()), wantedKind, StringComparison.OrdinalIgnoreCase))
-            .Where(e => producer == null || string.Equals(Reflect.TryGet(e, "ApplicationName") as string, producer, StringComparison.OrdinalIgnoreCase))
+            .Where(e => FromProducer(e, producer))
             .Select(e => (object)new Dictionary<string, object?>
             {
                 ["Name"] = Reflect.TryGet(e, "Name"),
                 ["Kind"] = ElementKind(Reflect.TryGet(e, "Type")?.ToString()),
                 // The service calls the producer module its "application".
-                ["Producer"] = Reflect.TryGet(e, "ApplicationName"),
+                ["Producer"] = ProducerName(e),
                 ["ProducerType"] = Reflect.TryGet(e, "ApplicationType"),
                 ["IsExtension"] = Reflect.TryGet(e, "IsExtension"),
                 ["Description"] = Reflect.TryGet(e, "Description"),
@@ -843,6 +845,28 @@ internal static class Studio
 
     /// <summary>A key as the text results show for it (a global key's GUID), to match keys across services.</summary>
     private static string? KeyId(object? key) => key == null ? null : Json.ToNode(key)?.ToString();
+
+    /// <summary>
+    /// The public-elements service names the producer of the platform's own elements (ListAppend,
+    /// Site_Property, User…) after the module that implements them, ServiceCenter. Manage
+    /// Dependencies, listReferenceable and a module's references call that producer (System), and
+    /// list no ServiceCenter: the bridge shows (System) too, and takes either name as a producer.
+    /// </summary>
+    private const string SystemProducer = "(System)";
+    private const string SystemModule = "ServiceCenter";
+
+    /// <summary>A public element's producer as Manage Dependencies names it: (System) for ServiceCenter's elements.</summary>
+    private static string? ProducerName(object element)
+    {
+        var name = Reflect.TryGet(element, "ApplicationName") as string;
+        return string.Equals(name, SystemModule, StringComparison.OrdinalIgnoreCase) ? SystemProducer : name;
+    }
+
+    /// <summary>Whether a public element comes from the producer asked for (any, when null); (System) and ServiceCenter name the same one.</summary>
+    private static bool FromProducer(object element, string? producer) =>
+        producer == null
+        || string.Equals(ProducerName(element), producer, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(Reflect.TryGet(element, "ApplicationName") as string, producer, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// The public Service Studio members addDependency uses. Public names survive Service Studio's
