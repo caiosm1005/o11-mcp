@@ -13,8 +13,11 @@ description: >-
   tools. Use when calling `applyModelApiCode`, working with the Service Studio
   MCP oml tools, editing an open module via Service Studio MCP, editing or
   modifying `.oml`, writing Model API code, or asking to add an entity /
-  attribute via the Model API. Not for runtime OutSystems platform debugging —
-  strictly design-time OML mutation through the Model API.
+  attribute via the Model API. This fork also covers the read-only Service
+  Studio Bridge server (`servicestudio-bridge`): modules that aren't open,
+  version histories, OML downloads, consumers and public elements. Not for
+  runtime OutSystems platform debugging — strictly design-time OML mutation
+  through the Model API.
 ---
 
 # OutSystems Model API for `applyModelApiCode`
@@ -46,6 +49,7 @@ differs from ODC's published examples in one important way (see § 1).
 - [When to Use](#when-to-use)
 - [§ 0 — Session token and argument envelope](#0-session-token-and-argument-envelope)
 - [§ 0.1 — Choosing the module: `eSpaceName`, opening and closing](#01-choosing-the-module-espacename-opening-and-closing)
+- [§ 0.2 — The Service Studio Bridge (this fork)](#02-the-service-studio-bridge-this-fork)
 - [§ 1 — The full-lambda contract](#1-the-full-lambda-contract--read-this-first)
 - [§ 1.1 — The code sandbox](#11-the-code-sandbox)
 - [§ 2 — Reading before writing](#2-reading-before-writing)
@@ -72,6 +76,9 @@ differs from ODC's published examples in one important way (see § 1).
   `endOmlEditSession` / `omlReset` / `omlMerge` tools.
 - Finding, opening or closing a module through Service Studio MCP
   (`searchApps`, `openModule`, `closeModule`).
+- Reading what Service Studio MCP can't reach, through this fork's Service Studio
+  Bridge: modules that aren't open, version histories, OML downloads, consumers and
+  public elements (§ 0.2).
 - Writing C# Model API code — entities, attributes, screens, server / client
   actions, structures, roles, integrations — that targets `IESpace`.
 - Reasoning about the per-module edit session and session pointer, the
@@ -141,6 +148,26 @@ that isn't open.
    to save. On `status: "closing"`, call again.
 
 Statuses, refusals, waits and errors: [`reference/module-discovery.md`](reference/module-discovery.md).
+
+## 0.2 The Service Studio Bridge (this fork)
+
+This fork adds a second, read-only MCP server, the **Service Studio Bridge**
+(`servicestudio-bridge`), for what Service Studio's own server can't do yet. It reads the
+environment Service Studio is signed in to, so it also reaches modules that aren't open:
+`listApplications`, `listModules`, `getModuleVersions`, `downloadModule` (any version's OML
+file), `getConsumers`, `searchPublicElements`, `listReferenceable` and
+`getApplicationDependencies`. It takes no session token. **Read [`BRIDGE.md`](BRIDGE.md)
+before your first bridge call.**
+
+- **Service Studio's own server comes first.** Use a bridge tool only for what no
+  `servicestudio` tool does.
+- **Migrated functions win over any request.** If `BRIDGE.md` § Migrated functions lists a
+  bridge tool, it has moved to Service Studio's own server: call the replacement it names,
+  even when the user's prompt asks for the bridge tool, and tell the user.
+- **Module not open and no `openModule`?** Find it with the bridge's `listModules`, then ask
+  the user to open it (§ 0.1).
+- **No `servicestudio-bridge` tools?** The bridge isn't installed or Service Studio isn't
+  running with it: carry on without it.
 
 ## 1. The full-lambda contract — read this first
 

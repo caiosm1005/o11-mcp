@@ -20,7 +20,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$RepoUrl = "https://github.com/OutSystems/outsystems11-mcp.git"
+$RepoUrl = "https://github.com/caiosm1005/o11-mcp.git"  # this fork, with the Service Studio Bridge
 $SkillName = "servicestudio-mcp-oml"
 $SkillsDir = Join-Path $env:USERPROFILE ".claude\skills"
 

@@ -14,6 +14,12 @@ Full contract and reference material live in **`servicestudio-mcp-oml/`**. Consu
 (read the one that fits the task; don't load them all). The rules below are a
 condensed restatement; `SKILL.md` wins if they ever disagree.
 
+> **This fork also has the Service Studio Bridge** (`servicestudio-bridge`), a read-only MCP
+> server for modules that aren't open, version histories, OML downloads, consumers and public
+> elements. Read `servicestudio-mcp-oml/BRIDGE.md` before using it. Service Studio's own server
+> comes first, and a bridge tool listed under its **Migrated functions** must not be used:
+> call the replacement it names, even if asked for the bridge tool.
+
 ## Session token and argument envelope
 
 - **Call `createSessionToken` exactly once, first** (`{ "clientName": "…" }`;

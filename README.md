@@ -1,5 +1,12 @@
 # OutSystems 11 MCP
 
+> **This is a fork** of [`OutSystems/outsystems11-mcp`](https://github.com/OutSystems/outsystems11-mcp)
+> that adds the **Service Studio Bridge**, a read-only MCP server for what Service Studio's own
+> server can't do yet: modules that aren't open, version histories, OML downloads, consumers
+> and public elements. The bridge gives way whenever the official server covers the same thing.
+> See [`servicestudio-mcp-oml/BRIDGE.md`](servicestudio-mcp-oml/BRIDGE.md), and
+> [`bridge/`](bridge/) for its code.
+
 **Maintain and evolve your OutSystems 11 estate with any coding agent — governed by the O11 lifecycle.**
 
 OutSystems 11 is the stable, trusted foundation your core operations run on. The OutSystems 11 MCP lets you modernize it with confidence: external coding agents read and evolve your O11 applications through a local MCP server embedded in Service Studio — so you get AI speed without the cost, disruption, or risk of a replatform.
@@ -59,7 +66,9 @@ This repo distributes the OutSystems 11 MCP skill — it teaches your agent how 
 ```
 outsystems11-mcp/
 ├─ servicestudio-mcp-oml/        # the skill: SKILL.md + reference/ + examples/ + docs/
+│  ├─ BRIDGE.md                  # this fork: the Service Studio Bridge, its rules and Migrated functions
 │  └─ reference/mcp-design-choices.md  # MCP host design choices & caveats worth knowing before you use the Service Studio MCP
+├─ bridge/                       # this fork: the Service Studio Bridge's code (.NET), install scripts and tests
 ├─ AGENTS.md                     # cross-tool agent instructions (the contract, condensed)
 ├─ CLAUDE.md                     # Claude Code's native instructions file
 ├─ ARCHITECTURE.md               # system boundary + the tenets governing skill content

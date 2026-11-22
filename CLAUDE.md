@@ -18,3 +18,12 @@ Note the distinction: working **on** this repo means editing the skill content. 
 - **Do not hand-edit `docs/*.Generated.cs` or `docs/BuiltinFunctions.Generated.json`** — they are reflected from the live `OutSystems.Model.V1` assembly. Regenerate via `servicestudio-mcp-oml/generation/README.md`.
 - A contract change is never a one-file edit: keep SKILL.md, the relevant `reference/` file(s), any affected `integration-examples/` transcript, the matching `effectiveness.yml` `scenario_*` points, **and the harness adapters that restate the contract** (`AGENTS.md`, `.github/copilot-instructions.md`, `.github/chatmodes/*.chatmode.md`, `.github/prompts/*.prompt.md`) in sync in the same change (see CONTRIBUTING.md "Development Workflow" and "Pull Request Process").
 - Tool names are exact host camelCase (`applyModelApiCode`, `getDataModel`, `omlMerge`, …). The old `oml_`-prefixed snake_case names no longer exist — never reintroduce them.
+
+## This fork: the Service Studio Bridge
+
+This fork adds [`bridge/`](./bridge/), a .NET MCP server that runs inside Service Studio, and
+[`servicestudio-mcp-oml/BRIDGE.md`](./servicestudio-mcp-oml/BRIDGE.md), which explains it to
+agents. `bridge/` is the one place with a build and tests (`bridge/tests/smoke.sh`,
+`bridge/tests/install-roundtrip.sh`); the skill-content rules above don't apply to its code.
+Whenever you update the fork from upstream, follow BRIDGE.md § Maintaining the fork: remove every
+bridge function the official server now covers, and record it under § Migrated functions.

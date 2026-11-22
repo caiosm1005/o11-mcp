@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The bridge. The startup hook (Hook/, the assembly DOTNET_STARTUP_HOOKS names) loads it
+    into Service Studio only, so this can target Service Studio's own runtime.
+    It references no Service Studio assembly: everything it uses from Service Studio
+    is looked up by name at call time, so a Service Studio update can only make a
+    tool fail with a message, never stop Service Studio from starting.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <DefaultItemExcludes>$(DefaultItemExcludes);Hook/**</DefaultItemExcludes>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>ServiceStudioBridge</AssemblyName>
+    <RootNamespace>ServiceStudioBridge</RootNamespace>
+    <Version>0.1.0</Version>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+</Project>

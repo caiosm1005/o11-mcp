@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The assembly DOTNET_STARTUP_HOOKS names. That variable reaches every .NET process the user
+    starts, whatever runtime it runs on, and a hook the runtime can't load stops the process from
+    starting (a .NET 10 assembly can't load on .NET 8, for one). So this targets .NET Standard 2.0,
+    which every runtime with startup hooks can load, and only checks the process name: inside
+    Service Studio it loads the bridge (ServiceStudioBridge.dll, next to it); anywhere else it
+    does nothing.
+  -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <AssemblyName>ServiceStudioBridge.Hook</AssemblyName>
+    <RootNamespace>ServiceStudioBridge</RootNamespace>
+    <Version>0.1.0</Version>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+</Project>

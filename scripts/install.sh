@@ -8,7 +8,7 @@
 #   bash scripts/install.sh --source <path>   # copy from a local checkout instead
 set -euo pipefail
 
-REPO_URL="https://github.com/OutSystems/outsystems11-mcp.git"
+REPO_URL="https://github.com/caiosm1005/o11-mcp.git"  # this fork, with the Service Studio Bridge
 SKILL_NAME="servicestudio-mcp-oml"
 SKILLS_DIR="$HOME/.claude/skills"
 SOURCE_DIR=""
