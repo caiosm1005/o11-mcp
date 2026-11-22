@@ -13,7 +13,7 @@ description: >-
   tools. Use when calling `applyModelApiCode`, working with the Service Studio
   MCP oml tools, editing an open module via Service Studio MCP, editing or
   modifying `.oml`, writing Model API code, or asking to add an entity /
-  attribute via the Model API. This fork also covers the read-only Service
+  attribute via the Model API. This fork also covers the Service
   Studio MCP Bridge server (`servicestudio-bridge`): modules that aren't open,
   version histories, OML downloads, consumers and public elements. Not for
   runtime OutSystems platform debugging — strictly design-time OML mutation
@@ -151,8 +151,8 @@ Statuses, refusals, waits and errors: [`reference/module-discovery.md`](referenc
 
 ## 0.2 The Service Studio MCP Bridge (this fork)
 
-This fork adds a second, read-only MCP server, the **Service Studio MCP Bridge**
-(`servicestudio-bridge`), for what Service Studio's own server can't do yet. It reads the
+This fork adds a second MCP server, the **Service Studio MCP Bridge**
+(`servicestudio-bridge`), for what Service Studio's own server can't do yet. It works with the
 environment Service Studio is signed in to, so it also reaches modules that aren't open:
 `listApplications`, `listModules`, `getModuleVersions`, `downloadModule` (any version's OML
 file), `getConsumers`, `searchPublicElements`, `listReferenceable` and

@@ -16,7 +16,7 @@ internal static class Studio
     private const int DefaultLimit = 200;
     private const int MaxLimit = 2000;
 
-    private sealed record Connection(object Provider, string? Host, string? DisplayName, string? Environment, string? User, string? Module);
+    private sealed record Connection(object Provider, string? Host, string? DisplayName, string? User, string? Module);
 
     private sealed record VersionEntry(object Raw, int Version, int VersionId);
 
@@ -27,7 +27,7 @@ internal static class Studio
         try
         {
             connections = Connections()
-                .Select(c => (object)new { c.Module, c.Host, c.DisplayName, c.Environment, c.User })
+                .Select(c => (object)new { c.Module, c.Host, c.DisplayName, c.User })
                 .ToList();
         }
         catch (Exception ex)
@@ -93,17 +93,36 @@ internal static class Studio
                 var picked = Reflect.Pick(v.Raw, "Version", "UploadDate", "UploaderUsername", "UploaderName", "CommitMessage");
                 picked["Published"] = ReferenceEquals(v, published);
                 return picked;
-            }).ToList(), limit, "these are the newest"),
+            }).ToList(), limit, null, newest: true),
         });
     }
 
-    public static object GetConsumers(string? host, string module)
+    public static object GetConsumers(string? host, string module, int? limit)
     {
         var connection = Pick(host);
-        var key = Reflect.Get(FindModule(connection, module), "Key");
-        return Scoped(connection, Run(() => Reflect.Enumerate(Reflect.Call(ApplicationService(connection), "GetConsumers", key)))
-            .Select(c => Reflect.Pick(c, "Name", "Key"))
-            .ToList());
+        var modules = Modules(connection);
+        var key = Reflect.Get(FindModule(connection, module, modules), "Key");
+
+        // Impact is judged per application, which the consumer list leaves out: take it from the module list.
+        var applicationByKey = new Dictionary<string, string?>();
+        foreach (var m in modules)
+        {
+            var id = KeyId(Reflect.TryGet(m, "Key"));
+            if (id != null)
+            {
+                applicationByKey.TryAdd(id, Reflect.TryGet(m, "ApplicationName") as string);
+            }
+        }
+
+        return Scoped(connection, Page(Run(() => Reflect.Enumerate(Reflect.Call(ApplicationService(connection), "GetConsumers", key)))
+            .Select(c =>
+            {
+                var picked = Reflect.Pick(c, "Name", "Key");
+                picked["Application"] = applicationByKey.GetValueOrDefault(KeyId(Reflect.TryGet(c, "Key")) ?? string.Empty);
+                return picked;
+            })
+            .OrderBy(c => c.GetValueOrDefault("Name") as string, StringComparer.OrdinalIgnoreCase)
+            .ToList(), limit, null));
     }
 
     public static object SearchPublicElements(string? host, string? text, string? kind, string? producer, int? limit)
@@ -230,7 +249,6 @@ internal static class Studio
                 provider,
                 Reflect.TryGet(hostInfo, "HostName") as string,
                 Reflect.TryGet(hostInfo, "DisplayName") as string,
-                Reflect.TryGet(hostInfo, "HostEnvironmentType")?.ToString(),
                 Reflect.TryGet(login, "UserName") as string,
                 Reflect.TryGet(Reflect.TryGet(presenter, "OwnerESpace"), "Name") as string);
         }
@@ -263,7 +281,7 @@ internal static class Studio
     /// <summary>Every result says which environment it came from.</summary>
     private static object Scoped(Connection connection, object result) => new
     {
-        Environment = new { connection.Host, connection.DisplayName, Type = connection.Environment, connection.User },
+        Environment = new { connection.Host, connection.DisplayName, connection.User },
         Result = result,
     };
 
@@ -277,9 +295,9 @@ internal static class Studio
     private static List<object> Modules(Connection connection) =>
         Run(() => Reflect.Enumerate(Reflect.Call(ApplicationService(connection), "GetModules")));
 
-    private static object FindModule(Connection connection, string name)
+    private static object FindModule(Connection connection, string name, List<object>? modules = null)
     {
-        var modules = Modules(connection);
+        modules ??= Modules(connection);
         var exact = modules.Where(m => string.Equals(Reflect.TryGet(m, "Name") as string, name, StringComparison.OrdinalIgnoreCase)).ToList();
         if (exact.Count == 1)
         {
@@ -381,18 +399,26 @@ internal static class Studio
         }
     }
 
-    /// <summary>The first items of a long list, with the total and a hint on narrowing it.</summary>
-    private static object Page<T>(List<T> items, int? limit, string narrow)
+    /// <summary>
+    /// The first items of a long list, with the total and how to get the rest: narrow, when the tool
+    /// takes filters, says how ("narrow it with filter"); newest says the list runs newest first.
+    /// </summary>
+    private static object Page<T>(List<T> items, int? limit, string? narrow, bool newest = false)
     {
         var max = Math.Clamp(limit ?? DefaultLimit, 1, MaxLimit);
+        var shown = newest ? $"The {max} newest of {items.Count}" : $"The first {max} of {items.Count}";
+        var more = narrow == null ? $"raise limit (up to {MaxLimit}) for more" : $"{narrow}, or raise limit (up to {MaxLimit}) for more";
         return new
         {
             Total = items.Count,
             Returned = Math.Min(items.Count, max),
-            Note = items.Count > max ? $"Only the first {max} of {items.Count}: {narrow}, or raise limit (up to {MaxLimit})." : null,
+            Note = items.Count > max ? $"{shown}; {more}." : null,
             Items = items.Take(max).ToList(),
         };
     }
+
+    /// <summary>A key as the text results show for it (a global key's GUID), to match keys across services.</summary>
+    private static string? KeyId(object? key) => key == null ? null : Json.ToNode(key)?.ToString();
 
     /// <summary>"ReferenceAction" and "Action" are the same kind; results use the short form.</summary>
     private static string? ElementKind(string? kind) =>

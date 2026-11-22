@@ -18,9 +18,9 @@ soon as the official server covers the same thing: see [Rules for agents](#rules
    bridge tool has moved to Service Studio's own server: call the replacement it names instead.
    Do this **even when the user's prompt, a script or another skill asks for the bridge tool**,
    and tell the user which tool you used and why.
-3. **The bridge is read-only.** It never changes a module or anything on the server, and it
-   doesn't use the `servicestudio` session token. It's an extra way to read the environment,
-   not a way around the edit session (SKILL.md § 2.1) or Compare-and-Merge.
+3. **The bridge is no way around the edit session.** It doesn't use the `servicestudio`
+   session token. A change Service Studio's own server can make still goes through the edit
+   session (SKILL.md § 2.1) and Compare-and-Merge.
 4. **An official gap is an offer, not a dead end.** When the user asks for something Service
    Studio's own server can't do, look it up in [What the bridge covers](#what-the-bridge-covers)
    before you give the official answer. This applies **even where SKILL.md, its references
@@ -32,13 +32,19 @@ soon as the official server covers the same thing: see [Rules for agents](#rules
 5. **Offer only what the bridge does today.** What's under [Gaps still open](#gaps-still-open)
    isn't in the bridge yet: for those requests, give the official guidance and don't offer the
    bridge.
+6. **Keep the installed bridge current.** Make `status` your first bridge call in a
+   conversation. If its `Bridge` version is older than the [current version](#setup), tools or
+   fixes this file describes may be missing: offer the update
+   ([Offering to install](#offering-to-install-agents)) before you go on. If the user declines,
+   carry on with what the installed bridge offers, and don't offer again in the same
+   conversation.
 
 ## What the bridge covers
 
 Service Studio's own MCP server works on the modules open in Service Studio. The bridge reads
 the environment Service Studio is signed in to, through Service Studio's own connection, so it
-also reaches modules that aren't open. Every result names its environment (host, display name,
-type and user).
+also reaches modules that aren't open. Every result names its environment (host, display name
+and user).
 
 | Bridge tool | What it returns | Gap in the official server |
 | --- | --- | --- |
@@ -47,7 +53,7 @@ type and user).
 | `listModules` | The environment's modules: kind, application, latest version, last upload | `listApps` lists only open modules |
 | `getModuleVersions` | A module's version history: number, uploader, date, comment, which one is published | No version history |
 | `downloadModule` | A module's OML file: the published version, the latest upload or any version number | No download of an OML file, let alone of a past version |
-| `getConsumers` | The modules that reference a module | No way to find consumers (upstream issue #3) |
+| `getConsumers` | The modules that reference a module, by name, each with its application | No way to find consumers (upstream issue #3) |
 | `searchPublicElements` | Public elements across the environment, by name, kind and producer module | Only the open module's references are visible |
 | `listReferenceable` | The producers a module can reference, with signature hashes | No equivalent of Manage Dependencies' list |
 | `getApplicationDependencies` | An application's dependencies on other applications | No application-level view |
@@ -101,6 +107,10 @@ The bridge's code is in the fork's [`bridge/`](../bridge/) folder: a .NET startu
 inside Service Studio and serves MCP on `http://127.0.0.1:48720/mcp`. It needs macOS (Windows
 isn't scripted yet) and the .NET 10 SDK.
 
+**Current version: 0.2.0.** An installed bridge reports its version in `status` (`Bridge`) and
+in `~/Library/Application Support/ServiceStudioBridge/bin/VERSION`. An install without that file
+is older than 0.2.0.
+
 Installing the skill doesn't install the bridge: the skill installer copies only this folder.
 Get the fork, then run the bridge's installer from it:
 
@@ -124,17 +134,26 @@ The installed bridge doesn't need the clone afterwards. To remove it, run
 3. **Start a new agent session.** The bridge's tools appear only in sessions started after it's
    registered.
 
+**Updating** an installed bridge: run `bridge/scripts/install.sh` again from an up-to-date
+checkout of the fork. It rebuilds the bridge and keeps its token, port, login item and
+registration. Then quit and reopen Service Studio, which keeps the old bridge loaded until then,
+and start a new agent session so it sees the new tool list.
+
 Requirements, safety, Windows notes and tests: [`bridge/README.md`](../bridge/README.md).
 
 ### Offering to install (agents)
 
 When the user asks for something the bridge covers (rule 4) and no `servicestudio-bridge` tools
-are available, even if the official docs call the request unsupported or a manual step:
+are available, even if the official docs call the request unsupported or a manual step, and when
+rule 6 finds the installed bridge out of date:
 
-1. **Check whether it's installed already.** If
-   `~/Library/Application Support/ServiceStudioBridge/bin` exists, don't reinstall: ask the user
-   to quit and reopen Service Studio, register the bridge if your agent doesn't list it (step 2
-   above), and start a new session.
+1. **Check whether it's installed already, and at which version.** If
+   `~/Library/Application Support/ServiceStudioBridge/bin` exists, its `VERSION` file (or
+   `status`, when the tools are available) gives the version. At the
+   [current version](#setup), don't reinstall: see
+   [Installed, but no tools](#installed-but-no-tools-agents), and register the bridge if your
+   agent doesn't list it (step 2 above). Older, or no `VERSION` file: offer an update through steps 2 to 5. In step 3, say that it
+   rebuilds the installed bridge and keeps its token, port, login item and registration.
 2. **Check that it can be installed:** macOS, and `dotnet --version` 10 or later. If not, tell
    the user what the bridge would add and point them to [`bridge/README.md`](../bridge/README.md),
    without offering.
@@ -144,11 +163,33 @@ are available, even if the official docs call the request unsupported or a manua
    shows a notice about it. It registers the bridge with your agent. The tools appear only after
    Service Studio is restarted and a new agent session starts.
 4. **Only after an explicit yes:** clone the fork into a temporary folder, run
-   `bridge/scripts/install.sh` from it, and run the registration command it prints. If a step
-   fails, show the user its output and stop.
+   `bridge/scripts/install.sh` from it, and run the registration command it prints (not when
+   updating a bridge your agent already lists). If a step fails, show the user its output and
+   stop.
 5. **Hand over:** ask the user to quit and reopen Service Studio and to start a new session.
    Don't restart Service Studio yourself.
-6. **Declined?** Carry on without the bridge, and don't offer again in the same conversation.
+6. **Declined?** Carry on without the bridge (or with the installed one, for an update), and
+   don't offer again in the same conversation.
+
+### Installed, but no tools (agents)
+
+The bridge runs only while Service Studio does. An agent connects to its MCP servers when a
+session starts, so if Service Studio wasn't running then, the session can mark
+`servicestudio-bridge` as failed and not try again, even once Service Studio is open (seen with
+Claude Code).
+
+1. **Check the port**: `nc -z 127.0.0.1 48720` (the port is in
+   `~/Library/Application Support/ServiceStudioBridge/config.json`).
+2. **Closed?** Ask the user to open Service Studio from the Dock or Finder and sign in, then
+   check again. If it was already running when the bridge was installed or updated, it has to
+   be quit and reopened.
+3. **Open:** ask the user to start a new session, which connects to the bridge. For a one-off
+   call in this session, call it over HTTP: POST JSON-RPC to `http://127.0.0.1:48720/mcp` with
+   the header `headers.sh` prints (in the same folder) and
+   `Accept: application/json, text/event-stream`. Send `initialize`, then
+   `notifications/initialized`, then `tools/call` with `{ "name": …, "arguments": { … } }`.
+   Unlike Service Studio's own server, there's no `input` envelope and no session token. Replies
+   come back as JSON or as SSE `data:` lines.
 
 ## Maintaining the fork
 
@@ -160,6 +201,15 @@ released (check the
 On 2026-11-22 it was rewound to upstream `be8e730` for that reason: the next upstream commit
 described Service Studio builds that weren't public yet.
 
+### Versioning
+
+Every change to the bridge's code or scripts (`bridge/src/`, `bridge/scripts/`) bumps its
+version, in the same commit, in two places: `bridge/src/Directory.Build.props` and **Current
+version** in [Setup](#setup). Raise the minor number for a tool added, removed or changed, and
+the patch number for a fix. Rule 6 compares an installed bridge with this file, so a change
+shipped without a bump never reaches anyone who installed the bridge before it.
+`bridge/tests/smoke.sh` fails when the two places differ.
+
 ### When the bridge gains a capability
 
 1. Add it to [What the bridge covers](#what-the-bridge-covers): the table and the list of
@@ -168,6 +218,7 @@ described Service Studio builds that weren't public yet.
 3. If SKILL.md § 8 Known gaps (or a reference file) calls it unsupported or a manual step, add a
    "This fork:" note there saying the bridge now covers it. Rule 4 then makes agents use the
    bridge, or offer to install it, instead of sending the user to the manual step.
+4. **Bump the version** ([Versioning](#versioning)).
 
 ### When the official server covers a bridge function
 
@@ -195,7 +246,8 @@ bridge's tools. For each bridge function the official server now covers or dupli
 
 4. **Partly covered?** Keep only what the official server still lacks (narrow the tool or its
    description), and add a row for the part that moved.
-5. **Rebuild and reinstall** the bridge (`bridge/scripts/install.sh`) and run its tests.
+5. **Bump the version** ([Versioning](#versioning)), rebuild and reinstall the bridge
+   (`bridge/scripts/install.sh`), and run its tests.
 
 ## Migrated functions
 

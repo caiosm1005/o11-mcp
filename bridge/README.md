@@ -5,7 +5,7 @@
 > [`servicestudio-mcp-oml/BRIDGE.md`](../servicestudio-mcp-oml/BRIDGE.md). Commands below run from
 > the repository root.
 
-Read-only MCP access to the OutSystems 11 environment that Service Studio is signed in to, so
+MCP access to the OutSystems 11 environment that Service Studio is signed in to, so
 a coding agent can list applications and modules, read version histories, consumers and public
 elements, and download any module version, all without a database connection or a person
 clicking through Service Studio.
@@ -23,17 +23,17 @@ or a session secret.
 
 | Tool | What it returns |
 | --- | --- |
-| `status` | Bridge and Service Studio versions, each window's module, environment (host, name, type) and user |
+| `status` | Bridge and Service Studio versions, each window's module, environment (host and name) and user |
 | `listApplications` | Applications and their modules |
 | `listModules` | Modules: kind, application, current version, last upload |
 | `getModuleVersions` | A module's full version history: number, uploader, time, comment, which one is published |
-| `getConsumers` | Modules that reference a module |
+| `getConsumers` | Modules that reference a module, by name, each with its application |
 | `searchPublicElements` | Public elements, as *Manage Dependencies* searches them |
 | `getApplicationDependencies` | An application's dependencies on other applications |
 | `listReferenceable` | The producers a module can reference, with signature hashes |
 | `downloadModule` | A module's OML file, published, latest or any version number, and its path |
 
-Every result says which environment it came from: host, display name, type and user.
+Every result says which environment it came from: host, display name and user.
 
 Pick versions from `getModuleVersions`, then pass the number to `downloadModule`. For example,
 "Ana's last upload after the published version" is the highest version above the published one
@@ -47,10 +47,10 @@ Service Studio is signed in to several at once, the tools ask for a `host` inste
 
 ## Safety
 
-- **Read-only.** Service Studio's services can also delete and move modules and applications;
-  the bridge exposes none of that.
+- **No deletes or moves.** Service Studio's services can also delete and move modules and
+  applications; the bridge exposes none of that.
 - **Your access, nothing more.** It acts as the user Service Studio is signed in as, so it can
-  read only what that user can.
+  do only what that user can.
 - **Local and authenticated.** It listens on 127.0.0.1 only. It requires a bearer token kept in
   a file only you can read, and refuses requests that carry an `Origin` header (web pages) or a
   foreign `Host`.
@@ -79,7 +79,8 @@ bridge/scripts/install.sh
 
 The script:
 
-- builds the hook and the bridge into `~/Library/Application Support/ServiceStudioBridge/bin/`;
+- builds the hook and the bridge into `~/Library/Application Support/ServiceStudioBridge/bin/`,
+  with a `VERSION` file;
 - writes `config.json` (just the port; `--port` changes it), a `token` and `headers.sh` there;
 - adds a login item, `~/Library/LaunchAgents/local.servicestudiobridge.plist`, which appends
   the hook to `DOTNET_STARTUP_HOOKS` at every login and keeps any hook already there. macOS
@@ -89,6 +90,13 @@ The script:
 
 Then quit and reopen Service Studio, and register the bridge with Claude Code using the command
 the script prints. It uses a `headersHelper`, so the token never sits in a config file.
+
+**Updating the bridge:** run the script again from an up-to-date checkout. It rebuilds the bridge
+and keeps the token, the port, the login item and the registration. Then quit and reopen Service
+Studio, which keeps the old bridge loaded until then, and start a new agent session. The version
+an install has is in `bin/VERSION` and in the `status` tool; the current one is in
+[`BRIDGE.md`](../servicestudio-mcp-oml/BRIDGE.md) § Setup, and agents offer the update when
+yours is older.
 
 **Service Studio updates** don't affect it. An update replaces the app; the hook, its
 configuration and the login item live in your home folder.
@@ -102,6 +110,7 @@ configuration and the login item live in your home folder.
 | Path (macOS) | Contents |
 | --- | --- |
 | `~/Library/Application Support/ServiceStudioBridge/config.json` | `port`, read at start |
+| `…/bin/VERSION` | The installed bridge's version |
 | `…/token`, `…/headers.sh` | The bearer token and the helper that sends it |
 | `…/bridge.log` | Start-up and error log |
 | `…/downloads/` | Default folder for `downloadModule` |

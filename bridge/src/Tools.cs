@@ -19,7 +19,7 @@ internal static class Tools
     private static readonly Tool[] All =
     [
         new("status",
-            "The bridge and Service Studio versions, and each Service Studio window: its module, the environment it's signed in to (host, name, type) and the user. Call it first.",
+            "The bridge and Service Studio versions, and each Service Studio window: its module, the environment it's signed in to (host and name) and the user. Call it first.",
             [],
             _ => Studio.Status()),
         new("listApplications",
@@ -37,9 +37,9 @@ internal static class Tools
             [Host, Module, Limit],
             a => Studio.GetModuleVersions(Text(a, "host"), Required(a, "module"), Number(a, "limit"))),
         new("getConsumers",
-            "The modules that reference (consume) a module.",
-            [Host, Module],
-            a => Studio.GetConsumers(Text(a, "host"), Required(a, "module"))),
+            "The modules that reference (consume) a module, sorted by name, each with its application.",
+            [Host, Module, Limit],
+            a => Studio.GetConsumers(Text(a, "host"), Required(a, "module"), Number(a, "limit"))),
         new("searchPublicElements",
             "Searches the public elements that modules in the environment expose, as Manage Dependencies lists them: name, kind and producer module.",
             [Host,

@@ -38,7 +38,7 @@ Beta write capabilities are fully usable, but their behavior may still change be
 
 ## Service Studio MCP Bridge (this fork)
 
-This fork adds a second MCP server, the **Service Studio MCP Bridge**, for things Service Studio's own MCP server can't do yet. It runs inside Service Studio and reads the environment Service Studio is signed in to, through Service Studio's own connection, so it also reaches modules that aren't open. It's read-only, and it doesn't replace the official server: it only fills its gaps.
+This fork adds a second MCP server, the **Service Studio MCP Bridge**, for things Service Studio's own MCP server can't do yet. It runs inside Service Studio and works with the environment Service Studio is signed in to, through Service Studio's own connection, so it also reaches modules that aren't open. It doesn't replace the official server: it only fills its gaps.
 
 | You want to… | Official MCP server | Bridge |
 | --- | --- | --- |
@@ -50,7 +50,7 @@ This fork adds a second MCP server, the **Service Studio MCP Bridge**, for thing
 | See which producers a module can reference | — | `listReferenceable` |
 | See an application's dependencies on other applications | — | `getApplicationDependencies` |
 
-Every result names the environment it came from (host, name, type and user).
+Every result names the environment it came from (host, name and user).
 
 **How it works with the official MCP**
 
@@ -69,7 +69,9 @@ bridge/scripts/install.sh
 
 Then quit and reopen Service Studio, register the bridge with the command the script prints, and start a new agent session.
 
-**Safety:** it never changes a module or anything on the server. It listens on `127.0.0.1` only and requires a token that only you can read. Other .NET apps never load it. Opt out for one launch with `SSBRIDGE_DISABLE=1`, or remove it with `bridge/scripts/uninstall.sh`.
+**Update** by running the same script again from an up-to-date clone, then quitting and reopening Service Studio and starting a new agent session. It keeps your token, port and registration. Agents check the installed bridge's version against [`BRIDGE.md`](servicestudio-mcp-oml/BRIDGE.md) and offer the update when it's out of date.
+
+**Safety:** it doesn't delete or move modules or applications. It listens on `127.0.0.1` only and requires a token that only you can read. Other .NET apps never load it. Opt out for one launch with `SSBRIDGE_DISABLE=1`, or remove it with `bridge/scripts/uninstall.sh`.
 
 More: [`servicestudio-mcp-oml/BRIDGE.md`](servicestudio-mcp-oml/BRIDGE.md) has the rules agents follow and how this fork is maintained; [`bridge/README.md`](bridge/README.md) covers how the bridge works, its safety, and its tests.
 

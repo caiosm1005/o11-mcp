@@ -4,12 +4,13 @@
 #
 # The bridge works with whichever environment Service Studio is signed in to: nothing here
 # names one. Everything lands in your home folder:
-#   ~/Library/Application Support/ServiceStudioBridge/   the hook and the bridge (bin/), config.json, token, headers.sh, log,
+#   ~/Library/Application Support/ServiceStudioBridge/   the hook and the bridge (bin/, with its VERSION), config.json, token, headers.sh, log,
 #     and "Service Studio MCP Bridge", the login item's script
 #   ~/Library/LaunchAgents/local.servicestudiobridge.plist
 #     a login item that adds the hook to DOTNET_STARTUP_HOOKS at every login,
 #     next to any hook already there. macOS lists it as "Service Studio MCP Bridge".
-# Re-running it rebuilds the hook and keeps the token (and the port, unless you pass a new one).
+# Re-running it rebuilds the hook and keeps the token (and the port, unless you pass a new one):
+# that's how an installed bridge is updated.
 set -eu
 
 repo=$(cd "$(dirname "$0")/.." && pwd -P)
@@ -45,6 +46,9 @@ mkdir -p "$support"
 rm -rf "$support/bin.new" "$support/bin.old"
 dotnet build "$repo/src/ServiceStudioBridge.csproj" -c Release -nologo -v q -o "$support/bin.new" >/dev/null
 dotnet build "$repo/src/Hook/ServiceStudioBridge.Hook.csproj" -c Release -nologo -v q -o "$support/bin.new" >/dev/null
+# The version agents compare with BRIDGE.md's to offer an update, readable without Service Studio.
+version=$(dotnet msbuild "$repo/src/ServiceStudioBridge.csproj" -getProperty:Version)
+printf '%s\n' "$version" > "$support/bin.new/VERSION"
 [ -d "$support/bin" ] && mv "$support/bin" "$support/bin.old"
 mv "$support/bin.new" "$support/bin"
 rm -rf "$support/bin.old"
@@ -114,7 +118,7 @@ esac
 
 port=$(sed -n 's/.*"port": *\([0-9]*\).*/\1/p' "$support/config.json")
 cat <<EOF
-Installed Service Studio MCP Bridge.
+Installed Service Studio MCP Bridge $version.
   Hook:   $dll
   Config: $support/config.json
   Port:   ${port:-48720}

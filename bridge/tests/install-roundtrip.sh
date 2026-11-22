@@ -44,6 +44,7 @@ sh "$repo/scripts/install.sh" > "$work/install.out" 2>&1
 check "install succeeds" 0 $?
 check "hook built" yes "$([ -f "$dll" ] && echo yes || echo no)"
 check "bridge built next to the hook" yes "$([ -f "$support/bin/ServiceStudioBridge.dll" ] && echo yes || echo no)"
+check "install records the version" "$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' "$repo/src/Directory.Build.props")" "$(cat "$support/bin/VERSION" 2>/dev/null)"
 check "config has the default port and nothing else" '{ "port": 48720 }' "$(tr -s ' \n' '  ' < "$support/config.json" | sed 's/ $//')"
 check "token is 64 hex characters" 64 "$(tr -dc 'a-f0-9' < "$support/token" | wc -c | tr -d ' ')"
 check "token readable by the user only" "-rw-------" "$(ls -l "$support/token" | cut -c1-10)"

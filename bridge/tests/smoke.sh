@@ -100,6 +100,10 @@ done
 out=$(rpc '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"status","arguments":{}}}')
 check "status succeeds outside Service Studio" yes "$(printf '%s' "$out" | grep -q '"isError":false' && echo yes || echo no)"
 check "status reports the missing presenter" yes "$(printf '%s' "$out" | grep -q "RuntimeImplementation isn" && echo yes || echo no)"
+# Agents compare an installed bridge's version with BRIDGE.md's to offer an update (BRIDGE.md § Versioning).
+current=$(sed -n 's/^\*\*Current version: \([0-9.]*\)\.\*\*.*/\1/p' "$repo/../servicestudio-mcp-oml/BRIDGE.md")
+[ -n "$current" ] || current="(no **Current version: x.y.z.** line in BRIDGE.md)"
+check "status reports BRIDGE.md's current version" "$current" "$(printf '%s' "$out" | grep -o 'Bridge\\":\\"[0-9.]*' | sed 's/.*"//')"
 check "status shows the configured port" yes "$(printf '%s' "$out" | grep -q "Port\\\\\":$port" && echo yes || echo no)"
 
 out=$(rpc '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"listModules","arguments":{}}}')
@@ -116,6 +120,9 @@ check "named shortcuts beyond published/latest are gone" yes "$(printf '%s' "$ou
 
 out=$(rpc '{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"listModules","arguments":{"limit":"lots"}}}')
 check "non-numeric limit refused" yes "$(printf '%s' "$out" | grep -q 'limit must be a whole number' && echo yes || echo no)"
+
+out=$(rpc '{"jsonrpc":"2.0","id":11,"method":"tools/call","params":{"name":"getConsumers","arguments":{"module":"X","limit":"lots"}}}')
+check "getConsumers takes a limit" yes "$(printf '%s' "$out" | grep -q 'limit must be a whole number' && echo yes || echo no)"
 
 out=$(rpc '{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"deleteModule","arguments":{}}}')
 check "unknown tool -> -32602" yes "$(printf '%s' "$out" | grep -q '"code":-32602' && echo yes || echo no)"

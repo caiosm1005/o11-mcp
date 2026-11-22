@@ -1,0 +1,14 @@
+<Project>
+
+  <!--
+    The bridge's version, shared by the hook and the bridge (both projects pick this file up).
+    Bump it with every change to the bridge, together with "Current version" in
+    servicestudio-mcp-oml/BRIDGE.md § Setup: agents compare the installed bridge's version
+    (the status tool, or bin/VERSION) with that line to offer an update. The smoke test fails
+    when the two differ.
+  -->
+  <PropertyGroup>
+    <Version>0.2.0</Version>
+  </PropertyGroup>
+
+</Project>
