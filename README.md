@@ -1,11 +1,6 @@
 # OutSystems 11 MCP
 
-> **This is a fork** of [`OutSystems/outsystems11-mcp`](https://github.com/OutSystems/outsystems11-mcp)
-> that adds the **Service Studio MCP Bridge**, a read-only MCP server for what Service Studio's own
-> server can't do yet: modules that aren't open, version histories, OML downloads, consumers
-> and public elements. The bridge gives way whenever the official server covers the same thing.
-> See [`servicestudio-mcp-oml/BRIDGE.md`](servicestudio-mcp-oml/BRIDGE.md), and
-> [`bridge/`](bridge/) for its code.
+This is a fork of [`OutSystems/outsystems11-mcp`](https://github.com/OutSystems/outsystems11-mcp) that adds the **Service Studio MCP Bridge**, for what Service Studio's own MCP server can't do yet: see [Service Studio MCP Bridge](#service-studio-mcp-bridge-this-fork).
 
 **Maintain and evolve your OutSystems 11 estate with any coding agent — governed by the O11 lifecycle.**
 
@@ -40,6 +35,43 @@ Years of logic, entities, and integrations shouldn't sit frozen in the platform.
 The write capabilities above are Beta Features. OutSystems provides Beta Features to collect customer feedback on non-final capabilities. A Beta Feature can change significantly, including through breaking changes, or OutSystems can discontinue it. For the terms that apply, refer to the [OutSystems Beta Features Agreement](https://www.outsystems.com/legal/beta-features-agreement).
 
 Beta write capabilities are fully usable, but their behavior may still change between Service Studio releases. By default, every write is staged and reviewed through Service Studio's interactive Compare-and-Merge window before anything is accepted into your module.
+
+## Service Studio MCP Bridge (this fork)
+
+This fork adds a second MCP server, the **Service Studio MCP Bridge**, for things Service Studio's own MCP server can't do yet. It runs inside Service Studio and reads the environment Service Studio is signed in to, through Service Studio's own connection, so it also reaches modules that aren't open. It's read-only, and it doesn't replace the official server: it only fills its gaps.
+
+| You want to… | Official MCP server | Bridge |
+| --- | --- | --- |
+| Find modules and applications on the server | Open modules only | `listModules`, `listApplications` |
+| See a module's version history: who uploaded what, when, and which version is published | — | `getModuleVersions` |
+| Download a module's OML file: the published version, the latest upload or any past version | — | `downloadModule` |
+| Find the modules that use a module | — | `getConsumers` |
+| Search the public elements other modules expose | Only the open module's references | `searchPublicElements` |
+| See which producers a module can reference | — | `listReferenceable` |
+| See an application's dependencies on other applications | — | `getApplicationDependencies` |
+
+Every result names the environment it came from (host, name, type and user).
+
+**How it works with the official MCP**
+
+- **The official server comes first.** Agents use a bridge tool only for something the official server can't do.
+- **The bridge gives way.** When an update to the official MCP covers a bridge function, the function is removed from the bridge and listed under *Migrated functions* in [`BRIDGE.md`](servicestudio-mcp-oml/BRIDGE.md). Agents then use the official tool, even when a prompt asks for the bridge one.
+- **Offered when you need it.** Ask for something the bridge covers while it isn't installed, and your agent offers to install it, even where the official docs call the request unsupported. It installs only after you say yes.
+- **Not covered yet:** adding a dependency and opening a module. For those, the official guidance still applies.
+
+**Requirements:** macOS and the .NET 10 SDK (Windows isn't scripted yet). Tested with Service Studio 11.55.97.
+
+**Install**, from a clone of this fork:
+
+```bash
+bridge/scripts/install.sh
+```
+
+Then quit and reopen Service Studio, register the bridge with the command the script prints, and start a new agent session.
+
+**Safety:** it never changes a module or anything on the server. It listens on `127.0.0.1` only and requires a token that only you can read. Other .NET apps never load it. Opt out for one launch with `SSBRIDGE_DISABLE=1`, or remove it with `bridge/scripts/uninstall.sh`.
+
+More: [`servicestudio-mcp-oml/BRIDGE.md`](servicestudio-mcp-oml/BRIDGE.md) has the rules agents follow and how this fork is maintained; [`bridge/README.md`](bridge/README.md) covers how the bridge works, its safety, and its tests.
 
 ## What you can do
 
@@ -158,6 +190,10 @@ Start a new Claude Code session, with a Reactive module open in Service Studio, 
 If you get a summary back, you're ready.
 
 > **Good to know:** your coding agent reaches its model over the network. Everything else — the MCP server and your application model — runs locally in your environment.
+
+### 7. (Optional) Add the Service Studio MCP Bridge
+
+For what the official server can't do yet, such as modules that aren't open, version histories, OML downloads and consumers, install the bridge: see [Service Studio MCP Bridge](#service-studio-mcp-bridge-this-fork). You can also skip this step: your agent offers to install it the first time you ask for something it covers.
 
 ## Using other coding agents
 
