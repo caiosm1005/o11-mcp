@@ -92,12 +92,12 @@ check "initialize echoes a supported protocol" '"2025-06-18"' "$(printf '%s' "$o
 check "initialize names the server" yes "$(printf '%s' "$out" | grep -q '"name":"servicestudio-bridge"' && echo yes || echo no)"
 
 out=$(rpc '{"jsonrpc":"2.0","id":2,"method":"tools/list"}')
-check "tools/list has 11 tools" 11 "$(printf '%s' "$out" | grep -o '"inputSchema"' | wc -l | tr -d ' ')"
-for t in status listApplications listModules getModuleVersions getConsumers searchPublicElements getApplicationDependencies listReferenceable downloadModule openModule addDependency; do
+check "tools/list has 12 tools" 12 "$(printf '%s' "$out" | grep -o '"inputSchema"' | wc -l | tr -d ' ')"
+for t in status listApplications listModules getModuleVersions getConsumers searchPublicElements getApplicationDependencies listReferenceable downloadModule openModule addDependency layoutFlows; do
   check "tool $t listed" yes "$(printf '%s' "$out" | grep -q "\"name\":\"$t\"" && echo yes || echo no)"
 done
-# downloadModule writes a file; openModule and addDependency change what's open in Service Studio.
-check "three tools aren't read-only" 3 "$(printf '%s' "$out" | grep -o '"readOnlyHint":false' | wc -l | tr -d ' ')"
+# downloadModule writes a file; openModule, addDependency and layoutFlows change what's open in Service Studio.
+check "four tools aren't read-only" 4 "$(printf '%s' "$out" | grep -o '"readOnlyHint":false' | wc -l | tr -d ' ')"
 
 out=$(rpc '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"status","arguments":{}}}')
 check "status succeeds outside Service Studio" yes "$(printf '%s' "$out" | grep -q '"isError":false' && echo yes || echo no)"
@@ -120,6 +120,12 @@ check "addDependency needs the element" yes "$(printf '%s' "$out" | grep -q 'ele
 
 out=$(rpc '{"jsonrpc":"2.0","id":14,"method":"tools/call","params":{"name":"addDependency","arguments":{"module":"X","element":"Y"}}}')
 check "addDependency fails cleanly outside Service Studio" yes "$(printf '%s' "$out" | grep -q '"isError":true' && echo yes || echo no)"
+
+out=$(rpc '{"jsonrpc":"2.0","id":15,"method":"tools/call","params":{"name":"layoutFlows","arguments":{}}}')
+check "layoutFlows needs the module" yes "$(printf '%s' "$out" | grep -q 'module is required' && echo yes || echo no)"
+
+out=$(rpc '{"jsonrpc":"2.0","id":16,"method":"tools/call","params":{"name":"layoutFlows","arguments":{"module":"X","dryRun":true}}}')
+check "layoutFlows fails cleanly outside Service Studio" yes "$(printf '%s' "$out" | grep -q '"isError":true' && echo yes || echo no)"
 
 out=$(rpc '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"downloadModule","arguments":{}}}')
 check "missing required argument is a tool error" yes "$(printf '%s' "$out" | grep -q 'module is required' && echo yes || echo no)"

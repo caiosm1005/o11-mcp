@@ -63,6 +63,7 @@ and user).
 | `getApplicationDependencies` | An application's dependencies on other applications | No application-level view |
 | `openModule` | Opens a module in a new Service Studio tab, as Open from environment does; no file is written | Older builds have no `openModule` |
 | `addDependency` | Adds a dependency on another module's public element to a module open in Service Studio, unsaved | `AddDependency` fails inside `applyModelApiCode` (upstream issue #10) |
+| `layoutFlows` | Lays out a module's logic flows on Service Studio's grid and wraps and places their notes, as one unsaved, undoable step | Layout is the agent's to do by hand, flow by flow (SKILL.md § 3.1) |
 
 Long lists come in pages: results say how many there are in all, and take a `limit`.
 
@@ -80,6 +81,7 @@ Requests that need the bridge, because Service Studio's own server can't answer 
 - "Open module X": `openModule`.
 - "Add a dependency on X", or any change that uses another module's element ("create a wrapper
   for action X in module M"): `addDependency`.
+- "Lay out the flows", "tidy up this action": `layoutFlows`.
 
 How the bridge fits with SKILL.md:
 
@@ -106,6 +108,11 @@ How the bridge fits with SKILL.md:
   such a bridge, read the module's references back (`runQuery`
   `Root { References { Name ServerActions { Name } Entities { Name } } }`) before you believe that
   error.
+- **Laying flows out (§ 3.1)?** `layoutFlows` lays out every logic flow of the module (or those
+  `flows` names) in one call, flows a developer drew included, so use it where the project has
+  adopted it. Run it once the edit session has ended (after the last `omlMerge` and
+  `endOmlEditSession`): it refuses while a session is open, because that session's next merge
+  would put the old positions back. A project can run it from a hook after every merge.
 - **Comparing with an earlier version**: `getModuleVersions` then `downloadModule` with that
   version number gives you its OML file.
 
@@ -127,7 +134,7 @@ The bridge's code is in the fork's [`bridge/`](../bridge/) folder: a .NET startu
 inside Service Studio and serves MCP on `http://127.0.0.1:48720/mcp`. It needs macOS (Windows
 isn't scripted yet) and the .NET 10 SDK.
 
-**Current version: 0.3.1.** An installed bridge reports its version in `status` (`Bridge`) and
+**Current version: 0.4.0.** An installed bridge reports its version in `status` (`Bridge`) and
 in `~/Library/Application Support/ServiceStudioBridge/bin/VERSION`. An install without that file
 is older than 0.2.0.
 

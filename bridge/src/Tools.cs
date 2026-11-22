@@ -88,6 +88,17 @@ internal static class Tools
                 new("kind", "string", "The element's kind, as searchPublicElements reports it (Action, Entity, Structure, WebBlock…), when one name has several kinds.")],
             a => Studio.AddDependency(Text(a, "host"), Required(a, "module"), Required(a, "element"), Text(a, "producer"), Text(a, "kind")),
             ReadOnly: false),
+        new("layoutFlows",
+            "Lays out the logic flows of a module open in Service Studio: every node on Service Studio's grid, and comment notes wrapped and placed. " +
+            "The changed positions go into the module as one unsaved, undoable step (Layout Flows); nothing is saved or published. " +
+            "It rearranges flows a developer drew too, unless flows names some. It refuses while Service Studio's own server has an edit session " +
+            "or unmerged changes on the module, whose next omlMerge would put the old positions back: run it after the session's last merge and " +
+            "endOmlEditSession. dryRun says what would move and changes nothing.",
+            [Host, Module,
+                new("flows", "string", "Flows to lay out, by path or name, comma-separated (\"/Customer_CreateOrUpdate\" or \"Customer_CreateOrUpdate\"). Empty: every logic flow."),
+                new("dryRun", "boolean", "Say what would move and change nothing.")],
+            a => Studio.LayoutFlows(Text(a, "host"), Required(a, "module"), Text(a, "flows"), Flag(a, "dryRun")),
+            ReadOnly: false),
     ];
 
     public static JsonArray Definitions() => new(All.Select(t => (JsonNode?)new JsonObject

@@ -34,6 +34,7 @@ or a session secret.
 | `downloadModule` | A module's OML file, published, latest or any version number, and its path |
 | `openModule` | Opens a module in a new Service Studio tab, as *Open from environment* does (no file written) |
 | `addDependency` | Adds a dependency on another module's public element to a module open in Service Studio (unsaved) |
+| `layoutFlows` | Lays out a module's logic flows on Service Studio's grid, notes wrapped and placed (one unsaved, undoable step) |
 
 Every result says which environment it came from: host, display name and user.
 
@@ -138,6 +139,8 @@ bridge/tests/servicestudio-check.sh
 surface. It also checks that the hook stays out of other processes, and that apps on .NET 8 still
 start with it (skipped when no .NET 8 runtime is installed). `install-roundtrip.sh` runs the install and uninstall scripts against a temporary home
 folder with a stand-in `launchctl`. Neither one touches Service Studio or your login environment.
+The layout `layoutFlows` runs is in `src/Layout/`, apart from Service Studio; read
+[`LAYOUT.md`](LAYOUT.md) before changing it.
 `servicestudio-check.sh` loads the installed Service Studio's assemblies, without starting it, and
 checks that `openModule` and `addDependency` still find every Service Studio member they use: run
 it after each Service Studio update.

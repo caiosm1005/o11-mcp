@@ -9,7 +9,7 @@ namespace ServiceStudioBridge;
 /// It opens modules and adds dependencies to open ones through Service Studio's own commands,
 /// never saves or publishes, and never calls the services that delete or move modules.
 /// </summary>
-internal static class Studio
+internal static partial class Studio
 {
     private static readonly object CallGate = new();
 
@@ -314,6 +314,7 @@ internal static class Studio
             EditSessionCheck = Check(() => McpSessionStateMembers()),
             // addDependency reads the module before and after, so it never reports a dependency it didn't add.
             ReferenceCheck = Check(ReferenceCheckMembers),
+            LayoutFlows = Check(() => LayoutMembers()),
         };
     }
 

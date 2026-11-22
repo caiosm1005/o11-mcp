@@ -25,6 +25,7 @@ This fork adds [`bridge/`](./bridge/), a .NET MCP server that runs inside Servic
 [`servicestudio-mcp-oml/BRIDGE.md`](./servicestudio-mcp-oml/BRIDGE.md), which explains it to
 agents. `bridge/` is the one place with a build and tests (`bridge/tests/smoke.sh`,
 `bridge/tests/install-roundtrip.sh`, and `bridge/tests/servicestudio-check.sh` against the
-installed Service Studio); the skill-content rules above don't apply to its code.
+installed Service Studio); the skill-content rules above don't apply to its code. The flow layout
+`layoutFlows` runs lives in `bridge/src/Layout/`: read `bridge/LAYOUT.md` only when changing it.
 Whenever you update the fork from upstream, follow BRIDGE.md § Maintaining the fork: remove every
 bridge function the official server now covers, and record it under § Migrated functions.

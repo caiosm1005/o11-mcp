@@ -159,7 +159,8 @@ environment Service Studio is signed in to, so it also reaches modules that aren
 `listApplications`, `listModules`, `getModuleVersions`, `downloadModule` (any version's OML
 file), `getConsumers`, `searchPublicElements`, `listReferenceable` and
 `getApplicationDependencies`. It also opens modules (`openModule`) and adds dependencies to an
-open module (`addDependency`), without saving or publishing. It takes no session token.
+open module (`addDependency`), and lays out a module's flows (`layoutFlows`), without saving or
+publishing. It takes no session token.
 **Read [`BRIDGE.md`](BRIDGE.md) before your first bridge call.**
 
 - **Service Studio's own server comes first.** Use a bridge tool only for what no
@@ -659,6 +660,10 @@ with another apply, merge the new `mutatedOmlPath`. See
 >    OSUI's blank layout uses the classes `.layout.blank`, not `.layout-blank`.
 
 ### Flow layout is a completion gate — do it before you merge
+
+> **This fork:** where the project has adopted it, the bridge's `layoutFlows` lays out the
+> module's flows after the session's last merge, as one undoable step, so the manual layout
+> below isn't needed (`BRIDGE.md` § What the bridge covers).
 
 **Every action (server or client) that gained new or spliced nodes must be laid out**
 before the task counts as complete. How depends on who drew the flow:
