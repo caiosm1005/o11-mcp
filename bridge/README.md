@@ -1,4 +1,4 @@
-# Service Studio Bridge
+# Service Studio MCP Bridge
 
 > Part of this fork of `outsystems11-mcp`. What the bridge is for, and the rule that it gives way
 > to Service Studio's own MCP server, are in
@@ -61,7 +61,7 @@ Service Studio is signed in to several at once, the tools ask for a `host` inste
   hook an app's runtime can't load stops that app from starting. The loader targets .NET
   Standard 2.0, so apps on any runtime load it; anywhere but Service Studio it returns at once,
   and the bridge's assembly is never loaded.
-- **Opt out** for one launch with `SSBRIDGE_DISABLE=1`, or for good with `bridge/scripts/uninstall-bridge.sh`.
+- **Opt out** for one launch with `SSBRIDGE_DISABLE=1`, or for good with `bridge/scripts/uninstall.sh`.
 
 ## Known limitations
 
@@ -74,7 +74,7 @@ Service Studio is signed in to several at once, the tools ask for a `host` inste
 Needs the .NET SDK 10. No package and no admin rights: everything goes in your home folder.
 
 ```bash
-bridge/scripts/install-bridge.sh
+bridge/scripts/install.sh
 ```
 
 The script:
@@ -83,7 +83,7 @@ The script:
 - writes `config.json` (just the port; `--port` changes it), a `token` and `headers.sh` there;
 - adds a login item, `~/Library/LaunchAgents/local.servicestudiobridge.plist`, which appends
   the hook to `DOTNET_STARTUP_HOOKS` at every login and keeps any hook already there. macOS
-  shows a notice that "Service Studio Bridge" can run in the background, and lists it under
+  shows a notice that "Service Studio MCP Bridge" can run in the background, and lists it under
   System Settings › General › Login Items & Extensions. Turning it off there stops the bridge
   from loading after your next login.
 

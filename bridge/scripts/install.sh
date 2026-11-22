@@ -1,14 +1,14 @@
 #!/bin/sh
-# Installs Service Studio Bridge for the current macOS user: no package, no admin rights.
-# Usage: scripts/install-bridge.sh [--port <port>]
+# Installs Service Studio MCP Bridge for the current macOS user: no package, no admin rights.
+# Usage: bridge/scripts/install.sh [--port <port>]
 #
 # The bridge works with whichever environment Service Studio is signed in to: nothing here
 # names one. Everything lands in your home folder:
 #   ~/Library/Application Support/ServiceStudioBridge/   the hook and the bridge (bin/), config.json, token, headers.sh, log,
-#     and "Service Studio Bridge", the login item's script
+#     and "Service Studio MCP Bridge", the login item's script
 #   ~/Library/LaunchAgents/local.servicestudiobridge.plist
 #     a login item that adds the hook to DOTNET_STARTUP_HOOKS at every login,
-#     next to any hook already there. macOS lists it as "Service Studio Bridge".
+#     next to any hook already there. macOS lists it as "Service Studio MCP Bridge".
 # Re-running it rebuilds the hook and keeps the token (and the port, unless you pass a new one).
 set -eu
 
@@ -20,7 +20,7 @@ dll="$support/bin/ServiceStudioBridge.Hook.dll"
 label=local.servicestudiobridge
 agent="$HOME/Library/LaunchAgents/$label.plist"
 # macOS names a login item after the program it runs, in its notice and in Login Items & Extensions.
-login_script="$support/Service Studio Bridge"
+login_script="$support/Service Studio MCP Bridge"
 port=""
 
 while [ $# -gt 0 ]; do
@@ -70,8 +70,8 @@ chmod 700 "$support/headers.sh"
 #    finish first, then appends the hook only if it isn't there yet.
 cat > "$login_script" <<'EOF'
 #!/bin/sh
-# Service Studio Bridge's login item: adds the hook ($1) to DOTNET_STARTUP_HOOKS for the apps you
-# open from now on, keeping any hook already there. Installed by scripts/install-bridge.sh.
+# Service Studio MCP Bridge's login item: adds the hook ($1) to DOTNET_STARTUP_HOOKS for the apps you
+# open from now on, keeping any hook already there. Installed by bridge/scripts/install.sh.
 sleep 5
 [ -f "$1" ] || exit 0
 hooks=$(/bin/launchctl getenv DOTNET_STARTUP_HOOKS)
@@ -81,6 +81,7 @@ case ":$hooks:" in
 esac
 EOF
 chmod 700 "$login_script"
+rm -f "$support/Service Studio Bridge"   # the script's name before the rename
 mkdir -p "$(dirname "$agent")"
 cat > "$agent" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -113,7 +114,7 @@ esac
 
 port=$(sed -n 's/.*"port": *\([0-9]*\).*/\1/p' "$support/config.json")
 cat <<EOF
-Installed Service Studio Bridge.
+Installed Service Studio MCP Bridge.
   Hook:   $dll
   Config: $support/config.json
   Port:   ${port:-48720}

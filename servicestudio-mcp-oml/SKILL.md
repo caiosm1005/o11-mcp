@@ -14,7 +14,7 @@ description: >-
   MCP oml tools, editing an open module via Service Studio MCP, editing or
   modifying `.oml`, writing Model API code, or asking to add an entity /
   attribute via the Model API. This fork also covers the read-only Service
-  Studio Bridge server (`servicestudio-bridge`): modules that aren't open,
+  Studio MCP Bridge server (`servicestudio-bridge`): modules that aren't open,
   version histories, OML downloads, consumers and public elements. Not for
   runtime OutSystems platform debugging — strictly design-time OML mutation
   through the Model API.
@@ -49,7 +49,7 @@ differs from ODC's published examples in one important way (see § 1).
 - [When to Use](#when-to-use)
 - [§ 0 — Session token and argument envelope](#0-session-token-and-argument-envelope)
 - [§ 0.1 — Choosing the module: `eSpaceName`, opening and closing](#01-choosing-the-module-espacename-opening-and-closing)
-- [§ 0.2 — The Service Studio Bridge (this fork)](#02-the-service-studio-bridge-this-fork)
+- [§ 0.2 — The Service Studio MCP Bridge (this fork)](#02-the-service-studio-mcp-bridge-this-fork)
 - [§ 1 — The full-lambda contract](#1-the-full-lambda-contract--read-this-first)
 - [§ 1.1 — The code sandbox](#11-the-code-sandbox)
 - [§ 2 — Reading before writing](#2-reading-before-writing)
@@ -77,7 +77,7 @@ differs from ODC's published examples in one important way (see § 1).
 - Finding, opening or closing a module through Service Studio MCP
   (`searchApps`, `openModule`, `closeModule`).
 - Reading what Service Studio MCP can't reach, through this fork's Service Studio
-  Bridge: modules that aren't open, version histories, OML downloads, consumers and
+  MCP Bridge: modules that aren't open, version histories, OML downloads, consumers and
   public elements (§ 0.2).
 - Writing C# Model API code — entities, attributes, screens, server / client
   actions, structures, roles, integrations — that targets `IESpace`.
@@ -149,9 +149,9 @@ that isn't open.
 
 Statuses, refusals, waits and errors: [`reference/module-discovery.md`](reference/module-discovery.md).
 
-## 0.2 The Service Studio Bridge (this fork)
+## 0.2 The Service Studio MCP Bridge (this fork)
 
-This fork adds a second, read-only MCP server, the **Service Studio Bridge**
+This fork adds a second, read-only MCP server, the **Service Studio MCP Bridge**
 (`servicestudio-bridge`), for what Service Studio's own server can't do yet. It reads the
 environment Service Studio is signed in to, so it also reaches modules that aren't open:
 `listApplications`, `listModules`, `getModuleVersions`, `downloadModule` (any version's OML
@@ -166,8 +166,13 @@ before your first bridge call.**
   even when the user's prompt asks for the bridge tool, and tell the user.
 - **Module not open and no `openModule`?** Find it with the bridge's `listModules`, then ask
   the user to open it (§ 0.1).
-- **No `servicestudio-bridge` tools?** The bridge isn't installed or Service Studio isn't
-  running with it: carry on without it.
+- **An official gap is an offer, not a dead end.** When the user asks for something Service
+  Studio's server can't do, check `BRIDGE.md` § What the bridge covers before you answer, **even
+  where this skill (§ 8 Known gaps included), its references or other official docs call the
+  request unsupported or a manual step.** If the bridge covers it, use it. If its tools aren't
+  available, offer to install it (`BRIDGE.md` § Offering to install) before you suggest the
+  official workaround, and install it only after the user says yes. What `BRIDGE.md` lists
+  under § Gaps still open isn't in the bridge yet: give the official guidance for those.
 
 ## 1. The full-lambda contract — read this first
 
@@ -834,6 +839,10 @@ host-only `createSessionToken`, `listOpenModules`, `searchApps`, `openModule`,
 `closeModule`, `omlReset`, `omlMerge`, `omlRefreshReferences` and `omlPublish` tools.
 Current gaps:
 
+> **This fork:** a gap here isn't the last word. Before telling the user something is
+> unsupported or must be done by hand, apply § 0.2: when the Service Studio MCP Bridge covers it,
+> use the bridge or offer to install it. Entries marked "This fork" say where the bridge stands.
+
 - **The generated [`docs/`](docs/) miss the O11 process (BPT) API.** It exists
   and works — `eSpace.CreateProcess` / `eSpace.Processes`
   (`OutSystems.Model.Processes.IProcess`) and the node types in
@@ -867,6 +876,9 @@ Current gaps:
   dependency works (e.g. System `User` via `eSpace.References.Named("(System)")`,
   no `RefreshDependency` needed). `omlRefreshReferences` (§ 3.2) only refreshes
   existing references to their latest version.
+  *This fork:* the bridge doesn't add dependencies yet (`BRIDGE.md` § Gaps still open), so the
+  manual step still applies. Its `listReferenceable` and `searchPublicElements` can tell the user
+  which producer and element to pick in Manage Dependencies.
 - **The output of a `Record List To Excel` node can't be referenced in an
   expression.** `IRecordListToExcelNode` can be created, but every reference to
   its output gives `ExpressionUnknownObject`. This was tried with 20+ names,

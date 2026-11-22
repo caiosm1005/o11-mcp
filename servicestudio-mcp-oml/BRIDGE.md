@@ -1,8 +1,8 @@
-# Service Studio Bridge
+# Service Studio MCP Bridge
 
 This fork of [`OutSystems/outsystems11-mcp`](https://github.com/OutSystems/outsystems11-mcp)
 exists to close gaps in the official OutSystems 11 MCP. It adds a second MCP server, the
-**Service Studio Bridge** (registered as `servicestudio-bridge`), for things Service Studio's
+**Service Studio MCP Bridge** (registered as `servicestudio-bridge`), for things Service Studio's
 own MCP server (`servicestudio`) can't do yet.
 
 The official MCP stays the main path. The bridge only covers what it lacks, and gives way as
@@ -21,8 +21,17 @@ soon as the official server covers the same thing: see [Rules for agents](#rules
 3. **The bridge is read-only.** It never changes a module or anything on the server, and it
    doesn't use the `servicestudio` session token. It's an extra way to read the environment,
    not a way around the edit session (SKILL.md § 2.1) or Compare-and-Merge.
-4. **Not connected?** If no `servicestudio-bridge` tools are available, carry on without them.
-   Tell the user what the bridge would have added, and point them to [Setup](#setup).
+4. **An official gap is an offer, not a dead end.** When the user asks for something Service
+   Studio's own server can't do, look it up in [What the bridge covers](#what-the-bridge-covers)
+   before you give the official answer. This applies **even where SKILL.md, its references
+   (§ 8 Known gaps included) or other official docs call the request unsupported, out of scope
+   or a manual step in Service Studio.** If the bridge covers it, use the bridge. If its tools
+   aren't available, offer to install it ([Offering to install](#offering-to-install-agents))
+   before you suggest the official workaround. Install it only after the user says yes. If they
+   decline, give the official workaround and don't offer again in the same conversation.
+5. **Offer only what the bridge does today.** What's under [Gaps still open](#gaps-still-open)
+   isn't in the bridge yet: for those requests, give the official guidance and don't offer the
+   bridge.
 
 ## What the bridge covers
 
@@ -44,6 +53,18 @@ type and user).
 | `getApplicationDependencies` | An application's dependencies on other applications | No application-level view |
 
 Long lists come in pages: results say how many there are in all, and take a `limit`.
+
+Requests that need the bridge, because Service Studio's own server can't answer them:
+
+- "Which modules or applications are on the server?", "find module X" when it isn't open:
+  `listModules`, `listApplications`.
+- "Who changed X, and when?", "which version is published?": `getModuleVersions`.
+- "Get or compare an earlier version", "download the OML": `getModuleVersions`, then
+  `downloadModule`.
+- "What uses X?", "what breaks if I change X?": `getConsumers`.
+- "Is there a public action, entity or block for Y I can reuse?": `searchPublicElements`.
+- "What can this module reference?": `listReferenceable`.
+- "What does application A depend on?": `getApplicationDependencies`.
 
 How the bridge fits with SKILL.md:
 
@@ -70,19 +91,64 @@ Candidates for the bridge, not built yet:
   `startOmlEditSession` takes its snapshot.
 - **Opening a module** when the official server has no `openModule`.
 
+Don't offer the bridge for these yet. Once one is built and listed under
+[What the bridge covers](#what-the-bridge-covers), rule 4 applies to it, and it overrides the
+manual step SKILL.md § 8 gives for it.
+
 ## Setup
 
 The bridge's code is in the fork's [`bridge/`](../bridge/) folder: a .NET startup hook that runs
-inside Service Studio and serves MCP on `http://127.0.0.1:48720/mcp`. On macOS, from the
-repository root:
+inside Service Studio and serves MCP on `http://127.0.0.1:48720/mcp`. It needs macOS (Windows
+isn't scripted yet) and the .NET 10 SDK.
+
+Installing the skill doesn't install the bridge: the skill installer copies only this folder.
+Get the fork, then run the bridge's installer from it:
 
 ```bash
-bridge/scripts/install-bridge.sh
+git clone --depth 1 https://github.com/caiosm1005/o11-mcp.git
 ```
 
-Then quit and reopen Service Studio, and register the bridge with the command the script prints
-(`claude mcp add-json --scope user servicestudio-bridge …`). Requirements, safety, Windows notes
-and tests: [`bridge/README.md`](../bridge/README.md).
+```bash
+o11-mcp/bridge/scripts/install.sh
+```
+
+The installed bridge doesn't need the clone afterwards. To remove it, run
+`bridge/scripts/uninstall.sh` from any checkout of the fork. Then:
+
+1. **Quit and reopen Service Studio** from the Dock or Finder (not from a terminal that was open
+   before the install), so it loads the bridge.
+2. **Register the bridge with your agent**, once. For Claude Code, run the command the installer
+   prints (`claude mcp add-json --scope user servicestudio-bridge …`). Other agents: add an HTTP
+   MCP server at `http://127.0.0.1:48720/mcp` that sends the header
+   `~/Library/Application Support/ServiceStudioBridge/headers.sh` prints.
+3. **Start a new agent session.** The bridge's tools appear only in sessions started after it's
+   registered.
+
+Requirements, safety, Windows notes and tests: [`bridge/README.md`](../bridge/README.md).
+
+### Offering to install (agents)
+
+When the user asks for something the bridge covers (rule 4) and no `servicestudio-bridge` tools
+are available, even if the official docs call the request unsupported or a manual step:
+
+1. **Check whether it's installed already.** If
+   `~/Library/Application Support/ServiceStudioBridge/bin` exists, don't reinstall: ask the user
+   to quit and reopen Service Studio, register the bridge if your agent doesn't list it (step 2
+   above), and start a new session.
+2. **Check that it can be installed:** macOS, and `dotnet --version` 10 or later. If not, tell
+   the user what the bridge would add and point them to [`bridge/README.md`](../bridge/README.md),
+   without offering.
+3. **Say what installing does, then ask.** It builds the bridge into
+   `~/Library/Application Support/ServiceStudioBridge`. It adds a login item, "Service Studio
+   MCP Bridge", which adds the bridge to `DOTNET_STARTUP_HOOKS` for apps opened from then on; macOS
+   shows a notice about it. It registers the bridge with your agent. The tools appear only after
+   Service Studio is restarted and a new agent session starts.
+4. **Only after an explicit yes:** clone the fork into a temporary folder, run
+   `bridge/scripts/install.sh` from it, and run the registration command it prints. If a step
+   fails, show the user its output and stop.
+5. **Hand over:** ask the user to quit and reopen Service Studio and to start a new session.
+   Don't restart Service Studio yourself.
+6. **Declined?** Carry on without the bridge, and don't offer again in the same conversation.
 
 ## Maintaining the fork
 
@@ -93,6 +159,15 @@ released (check the
 [Service Studio release notes](https://success.outsystems.com/support/release_notes/11/cross_platform_service_studio/)).
 On 2026-11-22 it was rewound to upstream `be8e730` for that reason: the next upstream commit
 described Service Studio builds that weren't public yet.
+
+### When the bridge gains a capability
+
+1. Add it to [What the bridge covers](#what-the-bridge-covers): the table and the list of
+   requests.
+2. Remove it from [Gaps still open](#gaps-still-open).
+3. If SKILL.md § 8 Known gaps (or a reference file) calls it unsupported or a manual step, add a
+   "This fork:" note there saying the bridge now covers it. Rule 4 then makes agents use the
+   bridge, or offer to install it, instead of sending the user to the manual step.
 
 ### When the official server covers a bridge function
 
@@ -120,7 +195,7 @@ bridge's tools. For each bridge function the official server now covers or dupli
 
 4. **Partly covered?** Keep only what the official server still lacks (narrow the tool or its
    description), and add a row for the part that moved.
-5. **Rebuild and reinstall** the bridge (`bridge/scripts/install-bridge.sh`) and run its tests.
+5. **Rebuild and reinstall** the bridge (`bridge/scripts/install.sh`) and run its tests.
 
 ## Migrated functions
 

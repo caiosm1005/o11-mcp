@@ -1,5 +1,5 @@
 #!/bin/sh
-# Removes Service Studio Bridge for the current macOS user: the login item, the hook's entry in
+# Removes Service Studio MCP Bridge for the current macOS user: the login item, the hook's entry in
 # DOTNET_STARTUP_HOOKS (other hooks stay), and ~/Library/Application Support/ServiceStudioBridge,
 # downloaded modules included.
 set -eu
@@ -23,6 +23,6 @@ fi
 rm -rf "$support"
 
 cat <<EOF
-Removed Service Studio Bridge. Quit and reopen Service Studio to unload it, and remove it from Claude Code:
+Removed Service Studio MCP Bridge. Quit and reopen Service Studio to unload it, and remove it from Claude Code:
   claude mcp remove --scope user servicestudio-bridge
 EOF
