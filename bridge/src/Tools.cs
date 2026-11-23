@@ -44,6 +44,18 @@ internal static class Tools
             "The modules that reference (consume) a module, sorted by name, each with its application.",
             [Host, Module, Limit],
             a => Studio.GetConsumers(Text(a, "host"), Required(a, "module"), Number(a, "limit"))),
+        new("getElementConsumers",
+            "The modules that reference one public element (an action, entity, structure, block…), sorted by name, each with its application: the list " +
+            "Service Studio's Find Usages in all Modules starts from, as the server has it from the consumers' published versions. It lists modules, not " +
+            "where in them the element is used. The element is found by its exact name across the environment; when several producers expose that name, " +
+            "it lists them instead: pass the producer (and kind). The bridge reads the producer as open in Service Studio, or loads its published version " +
+            "in memory (nothing is written). An extension's elements aren't covered.",
+            [Host,
+                new("element", "string", "The public element's exact name.", Required: true),
+                new("producer", "string", "The module that exposes it (exact name), when several do."),
+                new("kind", "string", "The element's kind, as searchPublicElements reports it (Action, Entity, Structure, WebBlock…), when one name has several kinds."),
+                Limit],
+            a => Studio.GetElementConsumers(Text(a, "host"), Required(a, "element"), Text(a, "producer"), Text(a, "kind"), Number(a, "limit"))),
         new("searchPublicElements",
             "Searches the public elements that modules in the environment expose, as Manage Dependencies lists them: name, kind and producer module. " +
             "The platform's own elements (ListAppend, Site_Property, User…) come under (System), as in Manage Dependencies.",

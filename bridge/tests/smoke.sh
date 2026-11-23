@@ -92,8 +92,8 @@ check "initialize echoes a supported protocol" '"2025-06-18"' "$(printf '%s' "$o
 check "initialize names the server" yes "$(printf '%s' "$out" | grep -q '"name":"servicestudio-bridge"' && echo yes || echo no)"
 
 out=$(rpc '{"jsonrpc":"2.0","id":2,"method":"tools/list"}')
-check "tools/list has 13 tools" 13 "$(printf '%s' "$out" | grep -o '"inputSchema"' | wc -l | tr -d ' ')"
-for t in status listApplications listModules getModuleVersions getConsumers searchPublicElements getApplicationDependencies listReferenceable downloadModule openModule addDependency uploadModules layoutFlows; do
+check "tools/list has 14 tools" 14 "$(printf '%s' "$out" | grep -o '"inputSchema"' | wc -l | tr -d ' ')"
+for t in status listApplications listModules getModuleVersions getConsumers getElementConsumers searchPublicElements getApplicationDependencies listReferenceable downloadModule openModule addDependency uploadModules layoutFlows; do
   check "tool $t listed" yes "$(printf '%s' "$out" | grep -q "\"name\":\"$t\"" && echo yes || echo no)"
 done
 # downloadModule writes a file; openModule, addDependency and layoutFlows change what's open in Service Studio;
@@ -145,6 +145,12 @@ check "non-numeric limit refused" yes "$(printf '%s' "$out" | grep -q 'limit mus
 
 out=$(rpc '{"jsonrpc":"2.0","id":11,"method":"tools/call","params":{"name":"getConsumers","arguments":{"module":"X","limit":"lots"}}}')
 check "getConsumers takes a limit" yes "$(printf '%s' "$out" | grep -q 'limit must be a whole number' && echo yes || echo no)"
+
+out=$(rpc '{"jsonrpc":"2.0","id":18,"method":"tools/call","params":{"name":"getElementConsumers","arguments":{}}}')
+check "getElementConsumers needs the element" yes "$(printf '%s' "$out" | grep -q 'element is required' && echo yes || echo no)"
+
+out=$(rpc '{"jsonrpc":"2.0","id":19,"method":"tools/call","params":{"name":"getElementConsumers","arguments":{"element":"Y"}}}')
+check "getElementConsumers fails cleanly outside Service Studio" yes "$(printf '%s' "$out" | grep -q '"isError":true' && echo yes || echo no)"
 
 out=$(rpc '{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"deleteModule","arguments":{}}}')
 check "unknown tool -> -32602" yes "$(printf '%s' "$out" | grep -q '"code":-32602' && echo yes || echo no)"

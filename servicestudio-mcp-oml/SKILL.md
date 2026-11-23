@@ -157,7 +157,7 @@ This fork adds a second MCP server, the **Service Studio MCP Bridge**
 (`servicestudio-bridge`), for what Service Studio's own server can't do yet. It works with the
 environment Service Studio is signed in to, so it also reaches modules that aren't open:
 `listApplications`, `listModules`, `getModuleVersions`, `downloadModule` (any version's OML
-file), `getConsumers`, `searchPublicElements`, `listReferenceable` and
+file), `getConsumers`, `getElementConsumers`, `searchPublicElements`, `listReferenceable` and
 `getApplicationDependencies`. It also opens modules (`openModule`), adds dependencies to an open
 module (`addDependency`) and lays out a module's flows (`layoutFlows`), without saving or
 publishing, and uploads open modules as new versions without publishing them (`uploadModules`).

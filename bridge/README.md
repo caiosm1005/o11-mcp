@@ -28,6 +28,7 @@ or a session secret.
 | `listModules` | Modules: kind, application, current version, last upload |
 | `getModuleVersions` | A module's full version history: number, uploader, time, comment, which one is published |
 | `getConsumers` | Modules that reference a module, by name, each with its application |
+| `getElementConsumers` | Modules that reference one public element (an action, entity, structure…), as *Find Usages in all Modules* lists them before searching each |
 | `searchPublicElements` | Public elements, as *Manage Dependencies* searches them |
 | `getApplicationDependencies` | An application's dependencies on other applications |
 | `listReferenceable` | The producers a module can reference, with signature hashes |

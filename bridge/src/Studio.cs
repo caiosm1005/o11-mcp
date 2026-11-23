@@ -107,8 +107,15 @@ internal static partial class Studio
         var connection = Pick(host);
         var modules = Modules(connection);
         var key = Reflect.Get(FindModule(connection, module, modules), "Key");
+        return Scoped(connection, Page(ConsumerRows(Run(() => Reflect.Enumerate(Reflect.Call(ApplicationService(connection), "GetConsumers", key))), modules), limit, null));
+    }
 
-        // Impact is judged per application, which the consumer list leaves out: take it from the module list.
+    /// <summary>
+    /// The server's consumer list, sorted by name, each with its application: impact is judged per
+    /// application, which the list leaves out, so it comes from the module list.
+    /// </summary>
+    private static List<Dictionary<string, object?>> ConsumerRows(List<object> consumers, List<object> modules)
+    {
         var applicationByKey = new Dictionary<string, string?>();
         foreach (var m in modules)
         {
@@ -119,7 +126,7 @@ internal static partial class Studio
             }
         }
 
-        return Scoped(connection, Page(Run(() => Reflect.Enumerate(Reflect.Call(ApplicationService(connection), "GetConsumers", key)))
+        return consumers
             .Select(c =>
             {
                 var picked = Reflect.Pick(c, "Name", "Key");
@@ -127,7 +134,7 @@ internal static partial class Studio
                 return picked;
             })
             .OrderBy(c => c.GetValueOrDefault("Name") as string, StringComparer.OrdinalIgnoreCase)
-            .ToList(), limit, null));
+            .ToList();
     }
 
     /// <summary>
@@ -404,6 +411,8 @@ internal static partial class Studio
             DialogWatch = Check(DialogMembers),
             // uploadModules runs Service Studio's own Upload command.
             Upload = Check(UploadMembers),
+            // getElementConsumers loads the producer and asks the server about one of its elements.
+            ElementConsumers = Check(() => ElementConsumersMembers()),
         };
     }
 
@@ -437,14 +446,9 @@ internal static partial class Studio
                 break;
         }
 
-        var wantedKind = kind == null ? null : ElementKind(kind);
-        var matches = Run(() => Reflect.Enumerate(Reflect.Call(ApplicationService(connection), "GetPublicElements", null, null, null)))
-            .Where(e => string.Equals(Reflect.TryGet(e, "Name") as string, element, StringComparison.OrdinalIgnoreCase))
-            .Where(e => wantedKind == null || string.Equals(ElementKind(Reflect.TryGet(e, "Type")?.ToString()), wantedKind, StringComparison.OrdinalIgnoreCase))
-            .Where(e => FromProducer(e, producer))
+        var matches = PublicElementsNamed(connection, element, producer, kind)
             .Where(e => KeyId(Reflect.TryGet(e, "ApplicationKey")) != moduleKey)
             .ToList();
-        string Describe(object e) => $"{Reflect.TryGet(e, "Name")} ({ElementKind(Reflect.TryGet(e, "Type")?.ToString())}) in {ProducerName(e)}";
         if (matches.Count == 0)
         {
             throw new BridgeException($"No other module exposes a public element named {element}"
@@ -454,7 +458,7 @@ internal static partial class Studio
 
         if (matches.Count > 1)
         {
-            throw new BridgeException($"{matches.Count} public elements match: {string.Join("; ", matches.Select(Describe))}. "
+            throw new BridgeException($"{matches.Count} public elements match: {string.Join("; ", matches.Select(DescribeElement))}. "
                 + "Ask the user which one, then pass its producer (and kind, if one producer has several).");
         }
 
@@ -542,7 +546,7 @@ internal static partial class Studio
             return Scoped(connection, new
             {
                 Module = module,
-                AlreadyReferenced = Describe(match),
+                AlreadyReferenced = DescribeElement(match),
                 Note = "Nothing changed: the module already references it.",
                 Warning = warnings.Count > 0 ? string.Join(" ", warnings) : null,
             });
@@ -550,14 +554,14 @@ internal static partial class Studio
 
         if (outcome == 0 && after == Holding.Stub)
         {
-            throw new BridgeException($"Service Studio took the request, but {module} still holds {Describe(match)} only as a hidden stub "
+            throw new BridgeException($"Service Studio took the request, but {module} still holds {DescribeElement(match)} only as a hidden stub "
                 + "(it came in as the type of something the module uses, such as a referenced action's parameter), so the module can't use it. "
                 + "Tick it in Manage Dependencies, and tell the bridge's maintainers this build needs another way to add it.");
         }
 
         if (outcome == 0 && after == Holding.None)
         {
-            throw new BridgeException($"Service Studio took the request, but {module} doesn't reference {Describe(match)} afterwards, so nothing was added: "
+            throw new BridgeException($"Service Studio took the request, but {module} doesn't reference {DescribeElement(match)} afterwards, so nothing was added: "
                 + $"{module} can't use that element (a Service or library module can't reference client actions, screens or blocks, for one). "
                 + "Choose another element, or try it in Manage Dependencies to see Service Studio's reason.");
         }
@@ -572,14 +576,14 @@ internal static partial class Studio
             0 => Scoped(connection, new
             {
                 Module = module,
-                Added = Describe(match),
+                Added = DescribeElement(match),
                 Note = (before == Holding.Stub ? "It was only a hidden stub before (no attributes or records); now it's ticked. " : string.Empty)
                     + "Unsaved in Service Studio. Start the edit session now: its snapshot includes this dependency, and omlMerge keeps it.",
                 Warning = warnings.Count > 0 ? string.Join(" ", warnings) : null,
             }),
-            1 => throw new BridgeException($"Service Studio couldn't find {Describe(match)} among what {module} can reference."),
-            2 => throw new BridgeException($"Service Studio couldn't add {Describe(match)}: the producer's dependencies are broken. Fix or refresh them in Manage Dependencies."),
-            3 => throw new BridgeException($"{Describe(match)} isn't a public element {module} can use."),
+            1 => throw new BridgeException($"Service Studio couldn't find {DescribeElement(match)} among what {module} can reference."),
+            2 => throw new BridgeException($"Service Studio couldn't add {DescribeElement(match)}: the producer's dependencies are broken. Fix or refresh them in Manage Dependencies."),
+            3 => throw new BridgeException($"{DescribeElement(match)} isn't a public element {module} can use."),
             var other => throw new BridgeException($"Service Studio's add-dependency routine answered {other}, which the bridge doesn't know. Check Manage Dependencies in Service Studio."),
         };
     }
@@ -649,19 +653,7 @@ internal static partial class Studio
         var name = Reflect.TryGet(found, "Name") as string ?? module;
         var key = Reflect.Get(found, "Key");
         var (selected, versionId, versions) = Select(connection, found, version);
-
-        var downloads = Reflect.Get(connection.Provider, "DownloadService")
-            ?? throw new BridgeException("Service Studio has no download service for this connection.");
-        var data = Run(() => Reflect.Call(downloads, "DownloadESpace", versionId, key, CancellationToken.None), timeoutSeconds: 300);
-        if (Reflect.TryGet(data, "Success") is false)
-        {
-            throw new BridgeException("The server refused the download: " + MessageText(Reflect.TryGet(data, "Message")));
-        }
-
-        if (Reflect.TryGet(data, "Data") is not byte[] { Length: > 0 } bytes)
-        {
-            throw new BridgeException("The server returned no module data.");
-        }
+        var (data, bytes) = Run(() => Download(connection, versionId, key!), timeoutSeconds: 300);
 
         // The answer's Version echoes the id that was asked for: 0 for "published".
         var entry = selected ?? versions.FirstOrDefault(v => v.VersionId == ToInt(Reflect.TryGet(data, "Version")));
@@ -682,6 +674,29 @@ internal static partial class Studio
             UploadDate = Reflect.TryGet(data, "UploadDate"),
             Comment = entry == null ? null : Reflect.TryGet(entry.Raw, "CommitMessage"),
         });
+    }
+
+    /// <summary>
+    /// A module's OML from the server, as Open from environment downloads it: the answer (its version
+    /// and upload fields) and the file's bytes. Version id 0 asks for the published version.
+    /// </summary>
+    private static (object Data, byte[] Bytes) Download(Connection connection, int versionId, object key)
+    {
+        var downloads = Reflect.Get(connection.Provider, "DownloadService")
+            ?? throw new BridgeException("Service Studio has no download service for this connection.");
+        var data = Reflect.Call(downloads, "DownloadESpace", versionId, key, CancellationToken.None)
+            ?? throw new BridgeException("The server returned no answer to the download.");
+        if (Reflect.TryGet(data, "Success") is false)
+        {
+            throw new BridgeException("The server refused the download: " + MessageText(Reflect.TryGet(data, "Message")));
+        }
+
+        if (Reflect.TryGet(data, "Data") is not byte[] { Length: > 0 } bytes)
+        {
+            throw new BridgeException("The server returned no module data.");
+        }
+
+        return (data, bytes);
     }
 
     private static IEnumerable<Connection> Connections()
@@ -971,6 +986,20 @@ internal static partial class Studio
     /// </summary>
     private const string SystemProducer = "(System)";
     private const string SystemModule = "ServiceCenter";
+
+    /// <summary>The environment's public elements with this exact name, of the kind and producer asked for (any, when null).</summary>
+    private static List<object> PublicElementsNamed(Connection connection, string element, string? producer, string? kind)
+    {
+        var wantedKind = kind == null ? null : ElementKind(kind);
+        return Run(() => Reflect.Enumerate(Reflect.Call(ApplicationService(connection), "GetPublicElements", null, null, null)))
+            .Where(e => string.Equals(Reflect.TryGet(e, "Name") as string, element, StringComparison.OrdinalIgnoreCase))
+            .Where(e => wantedKind == null || string.Equals(ElementKind(Reflect.TryGet(e, "Type")?.ToString()), wantedKind, StringComparison.OrdinalIgnoreCase))
+            .Where(e => FromProducer(e, producer))
+            .ToList();
+    }
+
+    /// <summary>A public element as results name it: "Name (Kind) in Producer".</summary>
+    private static string DescribeElement(object e) => $"{Reflect.TryGet(e, "Name")} ({ElementKind(Reflect.TryGet(e, "Type")?.ToString())}) in {ProducerName(e)}";
 
     /// <summary>A public element's producer as Manage Dependencies names it: (System) for ServiceCenter's elements.</summary>
     private static string? ProducerName(object element)

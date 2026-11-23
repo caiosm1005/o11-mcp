@@ -59,6 +59,7 @@ and user).
 | `getModuleVersions` | A module's version history: number, uploader, date, comment, which one is published | No version history |
 | `downloadModule` | A module's OML file: the published version, the latest upload or any version number | No download of an OML file, let alone of a past version |
 | `getConsumers` | The modules that reference a module, by name, each with its application | No way to find consumers (upstream issue #3) |
+| `getElementConsumers` | The modules that reference one public element (an action, entity, structure, block…), by name, each with its application: the list Service Studio's Find Usages in all Modules starts from | No Find Usages in all Modules |
 | `searchPublicElements` | Public elements across the environment, by name, kind and producer module | Only the open module's references are visible |
 | `listReferenceable` | The producers a module can reference, with signature hashes | No equivalent of Manage Dependencies' list |
 | `getApplicationDependencies` | An application's dependencies on other applications | No application-level view |
@@ -76,7 +77,9 @@ Requests that need the bridge, because Service Studio's own server can't answer 
 - "Who changed X, and when?", "which version is published?": `getModuleVersions`.
 - "Get or compare an earlier version", "download the OML": `getModuleVersions`, then
   `downloadModule`.
-- "What uses X?", "what breaks if I change X?": `getConsumers`.
+- "Which modules use module X?": `getConsumers`.
+- "Which modules use action (entity, structure, block…) X?", "who calls X?", "what breaks if I change X's
+  signature?": `getElementConsumers`.
 - "Is there a public action, entity or block for Y I can reuse?": `searchPublicElements`.
 - "What can this module reference?": `listReferenceable`.
 - "What does application A depend on?": `getApplicationDependencies`.
@@ -152,13 +155,36 @@ How the bridge fits with SKILL.md:
   closes it and reports `unchanged`. When Service Studio asks something else during an upload (a
   newer version on the server to merge, say), the result names that dialog: the user answers it in
   Service Studio.
+- **Which modules use an element?** `getElementConsumers` answers for one public element, by its
+  exact name, the way Service Studio's Find Usages in all Modules starts: it asks the server for the
+  modules that reference that element. `getConsumers` answers for the whole module, any element.
+  When several producers expose the name, it lists them instead: ask the user which one, then call
+  it again with `producer` (and `kind`). `searchPublicElements` finds names by part.
+  - **Modules, not usages.** It doesn't say where or how often a consumer uses the element. When
+    that matters, open the consumer (`openModule`) and read it with Service Studio's own server.
+  - **What the server knows.** The list is the server's, from the consumers' published versions: a
+    module open in Service Studio with unpublished changes to its references can be missing from
+    it, or listed when it no longer uses the element. Service Studio's Find Usages in all Modules
+    corrects the list for the modules it has open; to do the same, read an open consumer's
+    references (`runQuery` `Root { References { Name ServerActions { Name } } }`).
+  - **Top-level elements only.** The server tracks the action, entity, structure or block, not its
+    parts: for an attribute, a static record or an entity action, ask about its entity or structure.
+    Every module that references the entity is listed, whether it uses that attribute or not, as in
+    Service Studio.
+  - **Where it reads the element.** The server takes the element itself, not its name, so the bridge
+    reads it from the producer as open in Service Studio, or else loads the producer's published
+    version in memory (no file written). For a large producer that isn't open, that takes several
+    seconds; the result's `ReadFrom` says which it used.
+  - **No extensions.** An extension's elements fail with the reason: Find Usages in all Modules
+    loads the element from its module, and an extension has no OML to load, while `getConsumers`
+    lists no consumers for an extension either.
 - **Comparing with an earlier version**: `getModuleVersions` then `downloadModule` with that
   version number gives you its OML file.
 
 Known limitations: two modules with the same name (an espace and an extension, say) can't be told
 apart, and servers on the newer REST module API return no version numbers. `getConsumers` finds
 no consumers for an extension (verified 2026-11-22 on one that dozens of modules use), so it can't
-tell which modules use one. See [`bridge/README.md`](../bridge/README.md) for the rest.
+tell which modules use one, and `getElementConsumers` refuses an extension's elements. See [`bridge/README.md`](../bridge/README.md) for the rest.
 
 ## Gaps still open
 
@@ -173,7 +199,7 @@ The bridge's code is in the fork's [`bridge/`](../bridge/) folder: a .NET startu
 inside Service Studio and serves MCP on `http://127.0.0.1:48720/mcp`. It needs macOS (Windows
 isn't scripted yet) and the .NET 10 SDK.
 
-**Current version: 0.6.5.** An installed bridge reports its version in `status` (`Bridge`) and
+**Current version: 0.7.0.** An installed bridge reports its version in `status` (`Bridge`) and
 in `~/Library/Application Support/ServiceStudioBridge/bin/VERSION`. An install without that file
 is older than 0.2.0.
 
