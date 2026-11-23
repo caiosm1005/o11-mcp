@@ -195,8 +195,9 @@ internal static partial class Studio
             Status = "opening",
             Version = wanted?.Version ?? ToInt(Reflect.TryGet(found, "Version")),
             Note = "Service Studio is downloading it into a new tab. Wait until Service Studio's own server lists it among the open modules before working on it. "
-                + "The bridge cancels the reference check Service Studio runs once it has loaded (\"Getting references from …\"), or closes the "
-                + "missing-dependencies prompt that follows it; status lists either under AnsweredPrompts.",
+                + "The bridge cancels the reference check Service Studio runs once it has loaded (\"Getting references from …\"), and closes the "
+                + "messages that check shows in the module's tab (the missing-dependencies prompt, a communication error, \"not logged in\") "
+                + "as their close button does; status lists each under AnsweredPrompts, with what it said.",
         });
     }
 

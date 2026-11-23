@@ -26,6 +26,14 @@ internal static partial class Studio
     /// <summary>When each module being opened was first seen loaded, and whether its tab was brought to the front.</summary>
     private static readonly ConcurrentDictionary<string, (DateTime Loaded, bool Activated)> LoadedAt = new(StringComparer.OrdinalIgnoreCase);
 
+    private const string MessagesModuleType = "ServiceStudio.WebViewImplementation.MessagesViewModule";
+
+    /// <summary>The ids of the messages the reference check can show, once resolved.</summary>
+    private static HashSet<string>? referenceCheckMessages;
+
+    /// <summary>One of Service Studio's messages: its id, its type (Error, Warning, Question…) and its text.</summary>
+    private sealed record Message(string? Id, string Type, string Text);
+
     /// <summary>The modules being opened whose reference check was cancelled.</summary>
     private static readonly ConcurrentDictionary<string, bool> CheckCancelled = new(StringComparer.OrdinalIgnoreCase);
 
@@ -101,24 +109,33 @@ internal static partial class Studio
         .Select(w => new Dialog(WindowTitle(w), IsMessageDialog(w)))
         .ToList());
 
-    /// <summary>Every Service Studio window, for status: what the dialog checks look at, so a miss can be told apart.</summary>
+    /// <summary>
+    /// Every Service Studio window, for status: what the dialog checks look at, so a miss can be told
+    /// apart. A dialog says which module's tab it belongs to, and a message its id and type.
+    /// </summary>
     private static object? WindowList()
     {
         try
         {
-            return OnUiThread(() => Windows()
-                .Select(w => (object)new
-                {
-                    Title = WindowTitle(w),
-                    Kind = w.GetType().FullName,
-                    Visible = Reflect.TryGet(w, "IsVisible") is true,
-                    Owned = Reflect.TryGet(w, "Owner") != null,
-                    Dialog = IsDialog(w),
-                    Progress = IsDialog(w) && !IsMessageDialog(w)
-                        ? ProgressModules(w).Select(m => ProgressState(m)).Select(s => (object)new { s.Message, s.CancelEnabled }).ToList()
-                        : null,
-                })
-                .ToList());
+            return OnUiThread(() =>
+            {
+                var owners = TryDialogOwners();
+                return Windows()
+                    .Select(w => (object)new
+                    {
+                        Title = WindowTitle(w),
+                        Kind = w.GetType().FullName,
+                        Visible = Reflect.TryGet(w, "IsVisible") is true,
+                        Owned = Reflect.TryGet(w, "Owner") != null,
+                        Dialog = IsDialog(w),
+                        Tab = owners.GetValueOrDefault(w),
+                        Message = IsDialog(w) && !IsMessageDialog(w) && MessageOf(w) is { } message ? new { message.Id, message.Type } : null,
+                        Progress = IsDialog(w) && !IsMessageDialog(w)
+                            ? ProgressModules(w).Select(m => ProgressState(m)).Select(s => (object)new { s.Message, s.CancelEnabled }).ToList()
+                            : null,
+                    })
+                    .ToList();
+            });
         }
         catch (Exception ex)
         {
@@ -173,6 +190,14 @@ internal static partial class Studio
             ? 0 : throw new BridgeException("Avalonia's UI dispatcher is missing");
         _ = Reflect.FindType("ServiceStudio.MessageDialog", "ServiceStudio");
         _ = MissingDependenciesPrompt();
+        // Service Studio's messages: the dialogs each tab has open, and what a message view shows.
+        _ = (DialogsOfView(modal: true), DialogsOfView(modal: false));
+        _ = Reflect.FindType("ServiceStudio.Presenter.AbstractPresenter", "ServiceStudio.Presenter").GetProperty("View")
+            ?? throw new BridgeException("AbstractPresenter.View is missing");
+        _ = ReferenceCheckMessageIds();
+        var messages = Reflect.FindType(MessagesModuleType, "ServiceStudio.WebViewImplementation");
+        _ = (messages.GetProperty("TelemetryData"), PrivateFieldInfo(messages, "GetInitialMessagesInfo")) is ({ }, { })
+            ? 0 : throw new BridgeException("a member the bridge reads to recognise Service Studio's messages is missing");
         // ProgressView's public MainModule (its base's, typed IViewModule) returns its ProgressViewModule.
         _ = Reflect.FindType("ServiceStudio.Presenter.ITopLevelPresenter", "ServiceStudio.Presenter").GetMethod("Activate", Type.EmptyTypes)
             ?? throw new BridgeException("ITopLevelPresenter.Activate is missing");
@@ -189,7 +214,9 @@ internal static partial class Studio
     /// module has loaded: cancels its progress window ("Getting references from …"), and closes the
     /// missing-dependencies prompt when it comes anyway, bringing the module's tab to the front so
     /// a prompt held for it shows. Either answer leaves the references as the module saved them,
-    /// unchecked against the server. Every other dialog is left for the user.
+    /// unchecked against the server. The check's other messages in the module's tab (the
+    /// communication error a cancelled check can leave, "not logged in") are closed too, as their
+    /// close button does. Every other dialog is left for the user.
     /// </summary>
     private static void WatchForMissingDependencies(string module, string? host, string? key)
     {
@@ -226,6 +253,9 @@ internal static partial class Studio
                 try
                 {
                     CancelReferenceCheck();
+                    // The reference check's messages, by id, in the tabs being opened; matching the
+                    // missing-dependencies prompt by its title still catches it in any other window.
+                    AnswerReferenceCheckMessages();
                     AnswerMissingDependencies();
                     BringLoadedTabsForward();
                 }
@@ -452,17 +482,196 @@ internal static partial class Studio
     private static readonly ConditionalWeakTable<object, object> Described = new();
 
     /// <summary>A private field, by name, on the type or a base: the progress module keeps its event handlers in fields named after the events.</summary>
-    private static object? PrivateField(object target, string name)
+    private static object? PrivateField(object target, string name) => PrivateFieldInfo(target.GetType(), name)?.GetValue(target);
+
+    private static FieldInfo? PrivateFieldInfo(Type? type, string name)
     {
-        for (var type = target.GetType(); type != null; type = type.BaseType)
+        for (; type != null; type = type.BaseType)
         {
             if (type.GetField(name, BindingFlags.NonPublic | BindingFlags.Instance) is { } field)
             {
-                return field.GetValue(target);
+                return field;
             }
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Closes the messages of the reference check Service Studio runs once a module has loaded
+    /// (ServerOperations.CheckForIncompatibleOrMissingReferences), in the tab of a module the bridge
+    /// is opening, as their close button does. The check shows one of three: the missing-dependencies
+    /// prompt when references are incompatible or missing; the server error its server call failed
+    /// with (a communication error, as when a cancel cuts the call short); or "not logged in". Like
+    /// every message, each is a modal dialog window for the tab, hosting Service Studio's Messages
+    /// view (MessagesProvider.ShowMessage), that stops the tab's queue and the opens queued after it.
+    /// Closing the window, rather than pressing a button, gives the message's own Cancel answer, which
+    /// Service Studio takes as "not now". They're told apart by id, which no translation changes;
+    /// every other message is left for the user.
+    /// </summary>
+    private static void AnswerReferenceCheckMessages()
+    {
+        var ids = ReferenceCheckMessageIds();
+        var closed = OnUiThread(() =>
+        {
+            var done = new List<(string Module, string Title, Message Message)>();
+            foreach (var (module, _, tab) in LoadedPendingTabs())
+            {
+                foreach (var window in TabDialogs(tab, modal: true))
+                {
+                    if (MessageOf(window) is not { } message)
+                    {
+                        continue;
+                    }
+
+                    var title = WindowTitle(window);
+                    if (message.Id == null || !ids.Contains(message.Id))
+                    {
+                        Describe(window, $"Message \"{title}\" ({message.Id}, {message.Type}) in {module}'s tab left for the user: it isn't the reference check's");
+                        continue;
+                    }
+
+                    Reflect.Call(window, "Close");
+                    done.Add((module, title, message));
+                }
+            }
+
+            return done;
+        });
+        foreach (var (module, title, message) in closed)
+        {
+            Log.Info($"Closed Service Studio's \"{title}\" message ({message.Id}, {message.Type}) while opening {module}: {message.Text}");
+            var text = message.Text.Length > 300 ? message.Text[..300] + "…" : message.Text;
+            Remember(title, [module], $"Closed as its close button does, which gives the message's own Cancel answer. {message.Type}: {text}");
+        }
+    }
+
+    /// <summary>
+    /// The ids the reference check's messages carry (MessageDefinition.Id, the first field of each
+    /// catalogue entry): the missing-dependencies prompt's, and every server-communication message's,
+    /// which its server errors and "not logged in" come from (as do the debugger data's, also fetched
+    /// while a module opens). Each is read from Service Studio's own
+    /// catalogue, with the catalogue key too in case an entry's id differs from it.
+    /// </summary>
+    private static HashSet<string> ReferenceCheckMessageIds()
+    {
+        if (referenceCheckMessages != null)
+        {
+            return referenceCheckMessages;
+        }
+
+        var messageId = Reflect.FindType("OutSystems.RuntimeCommon.MessageId", "OutSystems.RuntimeCommon");
+        var getMessage = Reflect.FindType("OutSystems.RuntimeCommon.MessageDefinition", "OutSystems.RuntimeCommon")
+                .GetMethods(BindingFlags.Public | BindingFlags.Static)
+                .SingleOrDefault(m => m.Name == "GetMessage" && m.GetParameters() is [{ } first, { ParameterType.IsArray: true }] && first.ParameterType == messageId)
+            ?? throw new BridgeException("MessageDefinition.GetMessage(MessageId, params string[]) is missing");
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        void Add(object? id)
+        {
+            if (id == null)
+            {
+                return;
+            }
+
+            foreach (var text in new[] { Reflect.TryGet(getMessage.Invoke(null, [id, Array.Empty<string>()]), "Id"), Reflect.TryGet(id, "IdInResourceBaseName") })
+            {
+                if (text is string { Length: > 0 } s)
+                {
+                    ids.Add(s);
+                }
+            }
+        }
+
+        var prompt = Reflect.FindType("ServiceStudio.Presenter.PresenterMessageId", "ServiceStudio.Presenter")
+            .GetField("Reference_IncompatibleOrMissingDetected", BindingFlags.Public | BindingFlags.Static)?.GetValue(null)
+            ?? throw new BridgeException("PresenterMessageId.Reference_IncompatibleOrMissingDetected is missing");
+        Add(prompt);
+        // Every message catalogue of Service Studio's server communications: ServerCommunicationsMessageId,
+        // and DebuggerCommunicationsMessageId for the debugger data an open also fetches.
+        var server = Reflect.FindType("ServiceStudio.ServerCommunications.API.ServerCommunicationsMessageId", "ServiceStudio.ServerCommunications.API");
+        Type[] types;
+        try
+        {
+            types = server.Assembly.GetTypes();
+        }
+        catch (ReflectionTypeLoadException ex)
+        {
+            types = ex.Types.Where(t => t != null).Select(t => t!).ToArray();
+        }
+
+        foreach (var catalogue in types.Where(t => t.IsClass && messageId.IsAssignableFrom(t)))
+        {
+            foreach (var field in catalogue.GetFields(BindingFlags.Public | BindingFlags.Static).Where(f => f.FieldType == catalogue))
+            {
+                Add(field.GetValue(null));
+            }
+        }
+
+        return ids.Count > 1 ? referenceCheckMessages = ids : throw new BridgeException("Service Studio's catalogue gave no ids for the reference check's messages");
+    }
+
+    /// <summary>The message a dialog window shows, when it's one of Service Studio's messages (call on the UI thread).</summary>
+    private static Message? MessageOf(object window)
+    {
+        var module = HostedModules(window).FirstOrDefault(m => m.GetType().FullName == MessagesModuleType);
+        if (module == null)
+        {
+            return null;
+        }
+
+        // The view asks for what it shows through an event; MessagesProvider answers with the message.
+        var info = (PrivateField(module, "GetInitialMessagesInfo") as Delegate)?.DynamicInvoke();
+        var text = new[] { "message", "description" }.Select(n => Reflect.TryGet(info, n) as string).Where(s => !string.IsNullOrWhiteSpace(s));
+        return new Message(
+            Reflect.TryGet(Reflect.TryGet(module, "TelemetryData"), "area") as string,
+            Reflect.TryGet(info, "messageType")?.ToString() ?? "Unknown",
+            Squash(string.Join(" ", text)));
+    }
+
+    /// <summary>
+    /// The dialog windows Service Studio has open for a tab (call on the UI thread): DialogWindow
+    /// keeps them per tab view, modal and not. A dialog held until its tab comes to the front isn't
+    /// among them until then.
+    /// </summary>
+    private static List<object> TabDialogs(object tab, bool modal)
+    {
+        var view = Reflect.TryGet(tab, "View");
+        var method = DialogsOfView(modal);
+        return view != null && method.GetParameters()[0].ParameterType.IsInstanceOfType(view)
+            ? Reflect.Enumerate(method.Invoke(null, [view]))
+            : [];
+    }
+
+    private static MethodInfo DialogsOfView(bool modal)
+    {
+        var name = modal ? "GetModalDialogsOpened" : "GetNonModalDialogsOpened";
+        return Reflect.FindType("ServiceStudio.WebViewImplementation.DialogWindow", "ServiceStudio.WebViewImplementation")
+                .GetMethods(BindingFlags.Public | BindingFlags.Static).SingleOrDefault(m => m.Name == name && m.GetParameters().Length == 1)
+            ?? throw new BridgeException($"DialogWindow.{name} is missing");
+    }
+
+    /// <summary>Which module's tab each dialog window belongs to, for status (call on the UI thread); empty when the bridge can't tell.</summary>
+    private static Dictionary<object, string> TryDialogOwners()
+    {
+        var owners = new Dictionary<object, string>(ReferenceEqualityComparer.Instance);
+        try
+        {
+            var runtimeType = Reflect.FindType("ServiceStudio.Presenter.RuntimeImplementation", "ServiceStudio.Presenter");
+            foreach (var tab in Reflect.Enumerate(Reflect.TryGet(Reflect.Static(runtimeType, "Instance"), "Aggregators")))
+            {
+                var name = Reflect.TryGet(Reflect.TryGet(tab, "OwnerESpace"), "Name") as string ?? "(loading)";
+                foreach (var window in TabDialogs(tab, modal: true).Concat(TabDialogs(tab, modal: false)))
+                {
+                    owners.TryAdd(window, name);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Info($"Couldn't tell which tab each dialog belongs to: {Reflect.Unwrap(ex).Message}");
+        }
+
+        return owners;
     }
 
     private static void Remember(string what, List<string> modules, string note)

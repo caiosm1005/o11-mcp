@@ -22,8 +22,8 @@ internal static class Tools
         new("status",
             "The bridge and Service Studio versions, each Service Studio window (its module, the environment it's signed in to, host and name, and the user), " +
             "Capabilities: whether openModule, addDependency, layoutFlows and the dialog watch work with this Service Studio build, " +
-            "AnsweredPrompts: the missing-dependencies prompts the bridge closed after openModule, and Windows: Service Studio's open windows (title, kind, " +
-            "whether the bridge counts it as a dialog). Call it first.",
+            "AnsweredPrompts: the reference checks the bridge cancelled and the check's messages it closed after openModule, each with what it said, and Windows: " +
+            "Service Studio's open windows (title, kind, whether the bridge counts it as a dialog, the module whose tab it belongs to, a message's id and type). Call it first.",
             [],
             _ => Studio.Status()),
         new("listApplications",
@@ -85,8 +85,9 @@ internal static class Tools
             "By default that is the published version (the latest upload when none is published); version opens the latest upload or any other. " +
             "Use it only when Service Studio's own server has no openModule, and only for a module the user's request names. " +
             "A module already open comes back as alreadyOpen with the version its tab holds; asking for another version of it fails until its tab is closed. " +
-            "Once it has loaded, the bridge cancels Service Studio's reference check (\"Getting references from …\") as its Cancel button does, or closes the " +
-            "missing-dependencies prompt that follows (Manage Dependencies doesn't open); status lists either under AnsweredPrompts, and the references stay unchecked. " +
+            "Once it has loaded, the bridge cancels Service Studio's reference check (\"Getting references from …\") as its Cancel button does, and closes " +
+            "any message that check shows in the module's tab (the missing-dependencies prompt, so Manage Dependencies doesn't open; the communication error a " +
+            "cancelled check can leave; \"not logged in\") as its close button does; status lists each under AnsweredPrompts, and the references stay unchecked. " +
             "It returns once Service Studio starts opening the module: wait until Service Studio's own server lists it before working on it.",
             [Host, Module,
                 new("version", "string", "\"published\" (the default), \"latest\" for the newest upload even if unpublished, or a version number from getModuleVersions.")],

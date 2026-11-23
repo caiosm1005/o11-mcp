@@ -110,10 +110,23 @@ How the bridge fits with SKILL.md:
   module it opens to the front once it has loaded (the tabs switch, as a foreground open does). Either way the references stay as the module
   saved them, unchecked: refresh them (§ 3.2) before relying on producers' latest signatures, and
   fix missing ones with `addDependency`.
+- **The reference check's other messages.** The check behind that prompt
+  (`CheckForIncompatibleOrMissingReferences`) can show two more: the server error its server call
+  failed with ("Communication error: There was an error connecting to <host>" has shown up the
+  moment a check was cancelled, which most likely cut the call short), or "not logged in". None
+  matters to an open through the bridge, and each, like every Service Studio message, is a modal
+  dialog for the module's tab that stops it and the opens queued after it. So, for a few minutes
+  after `openModule`, the bridge closes any of the check's messages in that module's tab as its
+  close button does, which gives the message's own Cancel answer (Service Studio's "not now"), and
+  `status` lists each under `AnsweredPrompts` with its type and text. It tells them apart by
+  message id, which no translation changes: the missing-dependencies prompt's and every
+  server-communication message's (the debugger's included, whose data an open also fetches).
+  Other messages, and other tabs, are left for the user.
+  `status` → `Windows` says which module's tab each dialog belongs to, and a message's id and type.
 - **A dialog open in Service Studio** stops the module's queue, where `addDependency` and
   `layoutFlows` wait. They fail within seconds, naming the dialog ("Service Studio has a dialog
   open (…)"): ask the user to answer it, then try again. The bridge answers no dialog but the
-  prompt above. Bridges older than 0.5.1 waited two minutes, past the MCP client's own timeout, so
+  reference check's, above. Bridges older than 0.5.1 waited two minutes, past the MCP client's own timeout, so
   the caller saw only "The operation timed out."
 - **A change needs another module's element?** Add the dependency first, then
   `startOmlEditSession`: the session's snapshot is the module as open in Service Studio, unsaved
@@ -199,7 +212,7 @@ The bridge's code is in the fork's [`bridge/`](../bridge/) folder: a .NET startu
 inside Service Studio and serves MCP on `http://127.0.0.1:48720/mcp`. It needs macOS (Windows
 isn't scripted yet) and the .NET 10 SDK.
 
-**Current version: 0.7.0.** An installed bridge reports its version in `status` (`Bridge`) and
+**Current version: 0.7.1.** An installed bridge reports its version in `status` (`Bridge`) and
 in `~/Library/Application Support/ServiceStudioBridge/bin/VERSION`. An install without that file
 is older than 0.2.0.
 
