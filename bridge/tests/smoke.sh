@@ -92,12 +92,13 @@ check "initialize echoes a supported protocol" '"2025-06-18"' "$(printf '%s' "$o
 check "initialize names the server" yes "$(printf '%s' "$out" | grep -q '"name":"servicestudio-bridge"' && echo yes || echo no)"
 
 out=$(rpc '{"jsonrpc":"2.0","id":2,"method":"tools/list"}')
-check "tools/list has 12 tools" 12 "$(printf '%s' "$out" | grep -o '"inputSchema"' | wc -l | tr -d ' ')"
-for t in status listApplications listModules getModuleVersions getConsumers searchPublicElements getApplicationDependencies listReferenceable downloadModule openModule addDependency layoutFlows; do
+check "tools/list has 13 tools" 13 "$(printf '%s' "$out" | grep -o '"inputSchema"' | wc -l | tr -d ' ')"
+for t in status listApplications listModules getModuleVersions getConsumers searchPublicElements getApplicationDependencies listReferenceable downloadModule openModule addDependency uploadModules layoutFlows; do
   check "tool $t listed" yes "$(printf '%s' "$out" | grep -q "\"name\":\"$t\"" && echo yes || echo no)"
 done
-# downloadModule writes a file; openModule, addDependency and layoutFlows change what's open in Service Studio.
-check "four tools aren't read-only" 4 "$(printf '%s' "$out" | grep -o '"readOnlyHint":false' | wc -l | tr -d ' ')"
+# downloadModule writes a file; openModule, addDependency and layoutFlows change what's open in Service Studio;
+# uploadModules adds versions on the server.
+check "five tools aren't read-only" 5 "$(printf '%s' "$out" | grep -o '"readOnlyHint":false' | wc -l | tr -d ' ')"
 
 out=$(rpc '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"status","arguments":{}}}')
 check "status succeeds outside Service Studio" yes "$(printf '%s' "$out" | grep -q '"isError":false' && echo yes || echo no)"
@@ -107,7 +108,7 @@ current=$(sed -n 's/^\*\*Current version: \([0-9.]*\)\.\*\*.*/\1/p' "$repo/../se
 [ -n "$current" ] || current="(no **Current version: x.y.z.** line in BRIDGE.md)"
 check "status reports BRIDGE.md's current version" "$current" "$(printf '%s' "$out" | grep -o 'Bridge\\":\\"[0-9.]*' | sed 's/.*"//')"
 check "status shows the configured port" yes "$(printf '%s' "$out" | grep -q "Port\\\\\":$port" && echo yes || echo no)"
-check "status reports capabilities" yes "$(printf '%s' "$out" | grep -q 'Capabilities' && printf '%s' "$out" | grep -q 'AddDependency' && echo yes || echo no)"
+check "status reports capabilities" yes "$(printf '%s' "$out" | grep -q 'Capabilities' && printf '%s' "$out" | grep -q 'AddDependency' && printf '%s' "$out" | grep -q 'DialogWatch' && printf '%s' "$out" | grep -q 'AnsweredPrompts' && printf '%s' "$out" | grep -q '"Upload' && echo yes || echo no)"
 
 out=$(rpc '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"listModules","arguments":{}}}')
 check "listModules fails cleanly outside Service Studio" yes "$(printf '%s' "$out" | grep -q '"isError":true' && echo yes || echo no)"
@@ -120,6 +121,9 @@ check "addDependency needs the element" yes "$(printf '%s' "$out" | grep -q 'ele
 
 out=$(rpc '{"jsonrpc":"2.0","id":14,"method":"tools/call","params":{"name":"addDependency","arguments":{"module":"X","element":"Y"}}}')
 check "addDependency fails cleanly outside Service Studio" yes "$(printf '%s' "$out" | grep -q '"isError":true' && echo yes || echo no)"
+
+out=$(rpc '{"jsonrpc":"2.0","id":17,"method":"tools/call","params":{"name":"uploadModules","arguments":{}}}')
+check "uploadModules fails cleanly outside Service Studio" yes "$(printf '%s' "$out" | grep -q '"isError":true' && echo yes || echo no)"
 
 out=$(rpc '{"jsonrpc":"2.0","id":15,"method":"tools/call","params":{"name":"layoutFlows","arguments":{}}}')
 check "layoutFlows needs the module" yes "$(printf '%s' "$out" | grep -q 'module is required' && echo yes || echo no)"

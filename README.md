@@ -52,6 +52,7 @@ This fork adds a second MCP server, the **Service Studio MCP Bridge**, for thing
 | Open a module in Service Studio, with no file to clean up | Newer Service Studio builds only | `openModule` |
 | Add a dependency on another module's element to the module you have open | — (upstream issue #10) | `addDependency` |
 | Lay out a module's flows and notes in one go | — (by hand, flow by flow) | `layoutFlows` |
+| Upload open modules as new versions, without publishing | — (`omlPublish` uploads and publishes) | `uploadModules` |
 
 Every result names the environment it came from (host, name and user).
 

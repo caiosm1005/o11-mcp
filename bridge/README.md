@@ -35,6 +35,7 @@ or a session secret.
 | `openModule` | Opens a module in a new Service Studio tab, as *Open from environment* does (no file written) |
 | `addDependency` | Adds a dependency on another module's public element to a module open in Service Studio (unsaved) |
 | `layoutFlows` | Lays out a module's logic flows on Service Studio's grid, notes wrapped and placed (one unsaved, undoable step) |
+| `uploadModules` | Uploads open modules to the environment as new versions without publishing them, as Service Studio's *Upload* does |
 
 Every result says which environment it came from: host, display name and user.
 

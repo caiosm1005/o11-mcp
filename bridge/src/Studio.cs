@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 
 namespace ServiceStudioBridge;
@@ -43,6 +44,8 @@ internal static partial class Studio
             Config.Load().Port,
             Connections = connections,
             Capabilities = Capabilities(),
+            AnsweredPrompts = Answered.ToArray(),
+            Windows = connections.Count > 0 ? WindowList() : null,
             Error = error,
         };
     }
@@ -130,40 +133,96 @@ internal static partial class Studio
     /// <summary>
     /// Opens a module in Service Studio as Open from environment does: Service Studio downloads it
     /// into a new tab itself, so no file is written. Returns once Service Studio has started.
+    /// Without a version, Service Studio picks it, as Open from environment does: the module list's
+    /// entry, which is the published version (the latest upload when none is published). With one,
+    /// the list entry is copied with that version's fields, which is what Open from environment's
+    /// version picker hands the same command.
     /// </summary>
-    public static object OpenModule(string? host, string module)
+    public static object OpenModule(string? host, string module, string? version)
     {
         var connection = Pick(host);
         var found = FindModule(connection, module);
         var name = Reflect.TryGet(found, "Name") as string ?? module;
-        if (OpenTab(connection, name) != null)
+        var (wanted, _, versions) = version == null ? (null, 0, (List<VersionEntry>?)null) : Select(connection, found, version);
+
+        var tab = OpenTab(connection, name);
+        if (tab != null)
         {
-            return Scoped(connection, new { Module = name, Status = "alreadyOpen" });
+            // ESpace.Version is the version id the tab was opened from (0 for a module never uploaded).
+            var openId = ToInt(Reflect.TryGet(Reflect.TryGet(tab, "OwnerESpace"), "Version"));
+            var openVersion = (versions ?? Versions(connection, found)).FirstOrDefault(v => v.VersionId == openId)?.Version;
+            if (wanted != null && wanted.VersionId != openId)
+            {
+                throw new BridgeException($"{name} is already open in Service Studio, on {(openVersion is { } n ? $"version {n}" : "a version the server doesn't list")}, "
+                    + $"not version {wanted.Version}: close its tab in Service Studio, then call openModule again.");
+            }
+
+            return Scoped(connection, new { Module = name, Status = "alreadyOpen", Version = openVersion });
         }
 
-        var (open, source) = OpenFromEnvironment();
+        var (open, published) = OpenFromEnvironment();
+        var info = found;
+        var source = published;
+        if (wanted != null)
+        {
+            info = RuntimeHelpers.GetObjectValue(found)!;   // a copy of the boxed ModuleInfo
+            foreach (var field in new[] { "VersionId", "Version", "IsActive", "UploadDate", "UploaderUsername", "UploaderName", "CommitMessage" })
+            {
+                SetMember(info, field, Reflect.Get(wanted.Raw, field), required: field is "VersionId" or "Version");
+            }
+
+            if (Reflect.TryGet(wanted.Raw, "IsActive") is not true)
+            {
+                source = Enum.Parse(published.GetType(), "OtherVersion");
+            }
+        }
+
         var window = Reflect.TryGet(connection.Presenter, "TopLevelPresenter") ?? connection.Presenter;
 
         // forceAggregator: a tab of its own, opened in the background, like the File menu's command.
-        InContext(window, $"Opening {name}", () => open.Invoke(null, [window, found, true, source, null]), wait: false);
+        InContext(window, $"Opening {name}", () => open.Invoke(null, [window, info, true, source, null]), wait: false);
+        WatchForMissingDependencies(name, connection.Host, Reflect.TryGet(found, "Key")?.ToString());
         return Scoped(connection, new
         {
             Module = name,
             Status = "opening",
-            Note = "Service Studio is downloading it into a new tab. Wait until Service Studio's own server lists it among the open modules before working on it.",
+            Version = wanted?.Version ?? ToInt(Reflect.TryGet(found, "Version")),
+            Note = "Service Studio is downloading it into a new tab. Wait until Service Studio's own server lists it among the open modules before working on it. "
+                + "The bridge cancels the reference check Service Studio runs once it has loaded (\"Getting references from …\"), or closes the "
+                + "missing-dependencies prompt that follows it; status lists either under AnsweredPrompts.",
         });
     }
 
+    /// <summary>How a module holds another module's element.</summary>
+    private enum Holding
+    {
+        /// <summary>Not at all.</summary>
+        None,
+
+        /// <summary>
+        /// Only as a hidden stub: an element, most often an entity, that came in with something that
+        /// uses it, such as the type of a referenced action's parameter. It is Hidden, an entity has
+        /// only its identifier, and the module can't use it: Manage Dependencies shows it unticked.
+        /// </summary>
+        Stub,
+
+        /// <summary>Ticked: the module can use it.</summary>
+        Ticked,
+    }
+
     /// <summary>
-    /// Whether the open module references the producer's element, read through the public Model API
+    /// How the open module holds the producer's element, read through the public Model API
     /// (OutSystems.Model, the API applyModelApiCode runs): an element under a reference carries a
     /// global key made of the producer's module key and the element's own key. Service Studio's
     /// IGlobalKey only serializes (newer Model APIs also split it), so its text must contain a form
     /// of each key: the ObjectKey text or the GUID. Every reference is searched, not only the one
     /// named after the producer: the keys alone identify the element, and the reference's name can
-    /// differ from the producer's, as (System) does from ServiceCenter (SystemProducer).
+    /// differ from the producer's, as (System) does from ServiceCenter (SystemProducer). The key reads
+    /// "producerKey*elementKey", and an element's children extend it ("…*elementKey.#IdentifierType"),
+    /// so the part after the "*" must be the element's key itself. A match whose Hidden is true is a
+    /// stub, not a reference.
     /// </summary>
-    private static bool IsReferenced(object eSpace, object producerKey, object elementKey)
+    private static Holding HowReferenced(object eSpace, object producerKey, object elementKey)
     {
         var espaceInterface = eSpace.GetType().GetInterfaces().FirstOrDefault(i => i.FullName == "OutSystems.Model.IESpace")
             ?? throw new BridgeException("the module doesn't implement the Model API's IESpace");
@@ -182,20 +241,32 @@ internal static partial class Studio
         var references = Reflect.Enumerate(
             (new[] { espaceInterface }.Concat(espaceInterface.GetInterfaces()).Select(t => t.GetProperty("References")).FirstOrDefault(p => p != null)
                 ?? throw new BridgeException("IESpace.References is missing")).GetValue(eSpace));
+        var stub = false;
         foreach (var reference in references)
         {
             foreach (var item in Reflect.Enumerate(descendants.Invoke(reference, null)).Where(owner.IsInstanceOfType))
             {
                 var text = Text(globalKey.GetValue(item));
+                var star = text.LastIndexOf('*');
+                var own = star < 0 ? text : text[(star + 1)..];
                 if (producerForms.Any(f => text.Contains(f, StringComparison.OrdinalIgnoreCase))
-                    && elementForms.Any(f => text.Contains(f, StringComparison.OrdinalIgnoreCase)))
+                    && elementForms.Any(f => string.Equals(own, f, StringComparison.OrdinalIgnoreCase)))
                 {
-                    return true;
+                    // Every element Service Studio puts under a reference (ServiceStudio.Model's
+                    // Reference* classes) has a public Hidden, from ITopLevelReferenceElement; the
+                    // V1 interfaces don't declare it in this build. Anything without it reads null.
+                    if (Reflect.TryGet(item, "Hidden") is true)
+                    {
+                        stub = true;
+                        continue;
+                    }
+
+                    return Holding.Ticked;
                 }
             }
         }
 
-        return false;
+        return stub ? Holding.Stub : Holding.None;
     }
 
     /// <summary>
@@ -251,7 +322,7 @@ internal static partial class Studio
         return Find(signature) ?? Find(modelObject) ?? throw new BridgeException("the Model API's GlobalKey is missing");
     }
 
-    /// <summary>The Model API members IsReferenced reads (OutSystems.Model.V1), for status to check without a module.</summary>
+    /// <summary>The Model API members HowReferenced reads (OutSystems.Model.V1), for status to check without a module.</summary>
     private static void ReferenceCheckMembers()
     {
         var espace = Reflect.FindType("OutSystems.Model.IESpace", "OutSystems.Model.V1");
@@ -260,9 +331,23 @@ internal static partial class Studio
         _ = GlobalKeyProperty(ModelType("OutSystems.Model.IObjectSignature"));
         if (!Has(espace, "References")
             || ModelType("OutSystems.Model.IObjectSignature").GetMethod("GetAllDescendantsOfType") == null
-            || ModelType("OutSystems.Model.IGlobalKey").GetMethod("SerializeToString", Type.EmptyTypes) == null)
+            || ModelType("OutSystems.Model.IGlobalKey").GetMethod("SerializeToString", Type.EmptyTypes) == null
+            || Reflect.FindType("ServiceStudio.Model.Interfaces.ITopLevelReferenceElement", "ServiceStudio.Framework").GetProperty("Hidden") == null)
         {
             throw new BridgeException("a Model API member addDependency reads to check the reference is missing");
+        }
+    }
+
+    /// <summary>What openModule needs beyond the command: another version's source, the ModuleInfo fields it sets, and the open module's version id.</summary>
+    private static void OpenModuleMembers()
+    {
+        var (open, published) = OpenFromEnvironment();
+        _ = Enum.Parse(published.GetType(), "OtherVersion");
+        var moduleInfo = open.GetParameters()[1].ParameterType;
+        if (moduleInfo.GetField("VersionId") == null || moduleInfo.GetField("Version") == null
+            || Reflect.FindType("ServiceStudio.Model.ESpace", "ServiceStudio.Framework").GetProperty("Version") == null)
+        {
+            throw new BridgeException("a member openModule reads to pick or report a version is missing");
         }
     }
 
@@ -308,13 +393,17 @@ internal static partial class Studio
 
         return new
         {
-            OpenModule = Check(() => OpenFromEnvironment()),
+            OpenModule = Check(OpenModuleMembers),
             AddDependency = addDependency,
             // addDependency refuses while Service Studio's MCP server has a session on the module.
             EditSessionCheck = Check(() => McpSessionStateMembers()),
             // addDependency reads the module before and after, so it never reports a dependency it didn't add.
             ReferenceCheck = Check(ReferenceCheckMembers),
             LayoutFlows = Check(() => LayoutMembers()),
+            // openModule closes the missing-dependencies prompt, and waits name the dialog in their way.
+            DialogWatch = Check(DialogMembers),
+            // uploadModules runs Service Studio's own Upload command.
+            Upload = Check(UploadMembers),
         };
     }
 
@@ -382,13 +471,13 @@ internal static partial class Studio
 
         // The module is read before and after through the public Model API: Service Studio's routine
         // can report an element as added that the module can't use (a client action in a Service
-        // module), which it then leaves out.
+        // module), which it then leaves out. A hidden stub counts as not referenced, both ways.
         string? verifyProblem = null;
-        bool? Referenced()
+        Holding? Referenced()
         {
             try
             {
-                return IsReferenced(eSpace, producerKey, elementKey);
+                return HowReferenced(eSpace, producerKey, elementKey);
             }
             catch (Exception ex)
             {
@@ -397,7 +486,7 @@ internal static partial class Studio
             }
         }
 
-        bool? before = null, after = null;
+        Holding? before = null, after = null;
 
         // Outcome codes, as the fallback routine's enum declares them: added, element not found, broken dependencies, not public.
         int outcome;
@@ -408,7 +497,7 @@ internal static partial class Studio
             InContext(tab, label, () =>
             {
                 before = Referenced();
-                if (before == true)
+                if (before == Holding.Ticked)
                 {
                     return;
                 }
@@ -437,7 +526,7 @@ internal static partial class Studio
             InContext(tab, label, () =>
             {
                 before = Referenced();
-                if (before == true)
+                if (before == Holding.Ticked)
                 {
                     return;
                 }
@@ -448,7 +537,7 @@ internal static partial class Studio
             outcome = result == null ? -1 : Convert.ToInt32(result);
         }
 
-        if (before == true)
+        if (before == Holding.Ticked)
         {
             return Scoped(connection, new
             {
@@ -459,7 +548,14 @@ internal static partial class Studio
             });
         }
 
-        if (outcome == 0 && after == false)
+        if (outcome == 0 && after == Holding.Stub)
+        {
+            throw new BridgeException($"Service Studio took the request, but {module} still holds {Describe(match)} only as a hidden stub "
+                + "(it came in as the type of something the module uses, such as a referenced action's parameter), so the module can't use it. "
+                + "Tick it in Manage Dependencies, and tell the bridge's maintainers this build needs another way to add it.");
+        }
+
+        if (outcome == 0 && after == Holding.None)
         {
             throw new BridgeException($"Service Studio took the request, but {module} doesn't reference {Describe(match)} afterwards, so nothing was added: "
                 + $"{module} can't use that element (a Service or library module can't reference client actions, screens or blocks, for one). "
@@ -477,7 +573,8 @@ internal static partial class Studio
             {
                 Module = module,
                 Added = Describe(match),
-                Note = "Unsaved in Service Studio. Start the edit session now: its snapshot includes this dependency, and omlMerge keeps it.",
+                Note = (before == Holding.Stub ? "It was only a hidden stub before (no attributes or records); now it's ticked. " : string.Empty)
+                    + "Unsaved in Service Studio. Start the edit session now: its snapshot includes this dependency, and omlMerge keeps it.",
                 Warning = warnings.Count > 0 ? string.Join(" ", warnings) : null,
             }),
             1 => throw new BridgeException($"Service Studio couldn't find {Describe(match)} among what {module} can reference."),
@@ -632,20 +729,22 @@ internal static partial class Studio
 
     /// <summary>
     /// Runs body on the presenter's own thread, once Service Studio is idle, as its commands run.
-    /// With wait, blocks until body finishes and rethrows what it threw; a modal dialog left open
-    /// in Service Studio keeps it waiting until the timeout.
+    /// With wait, blocks until body finishes and rethrows what it threw. A modal dialog stops the
+    /// queue: when one has been open for a few seconds and body hasn't started, it fails at once,
+    /// naming the dialog. The timeout stays under an MCP client's own (about a minute), so the
+    /// caller gets the reason rather than a bare timeout.
     /// </summary>
-    private static void InContext(object presenter, string what, Action body, bool wait, int timeoutSeconds = 120)
+    private static void InContext(object presenter, string what, Action body, bool wait, int timeoutSeconds = 50)
     {
+        const int Queued = 0, Started = 1, Abandoned = 2;
+        var state = Queued;
         var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var abandoned = new CancellationTokenSource();   // no timer, so nothing to dispose
-        var token = abandoned.Token;
         Action action = () =>
         {
             try
             {
-                // Reported as timed out already: doing it now would surprise whoever asked.
-                if (token.IsCancellationRequested)
+                // Reported as failed already: doing it now would surprise whoever asked.
+                if (Interlocked.CompareExchange(ref state, Started, Queued) != Queued)
                 {
                     Log.Info($"{what}: skipped, the caller had given up waiting");
                     return;
@@ -667,12 +766,29 @@ internal static partial class Studio
             return;
         }
 
+        var started = DateTime.UtcNow;
         try
         {
-            if (!done.Task.Wait(TimeSpan.FromSeconds(timeoutSeconds)))
+            while (!done.Task.Wait(TimeSpan.FromSeconds(1)))
             {
-                abandoned.Cancel();
-                throw new BridgeException($"Service Studio didn't get to it within {timeoutSeconds} s. Is a dialog open there? Close it and try again.");
+                var waited = DateTime.UtcNow - started;
+                var dialogs = waited >= TimeSpan.FromSeconds(6) && Volatile.Read(ref state) == Queued ? TryOpenDialogs() : null;
+                if (dialogs is { Count: > 0 } && Interlocked.CompareExchange(ref state, Abandoned, Queued) == Queued)
+                {
+                    throw new BridgeException($"Service Studio has a dialog open ({string.Join("; ", dialogs.Select(d => $"\"{d.Title}\""))}), "
+                        + "and it runs nothing else until someone answers it. Answer it in Service Studio (or ask the user to), then try again.");
+                }
+
+                if (waited >= TimeSpan.FromSeconds(timeoutSeconds))
+                {
+                    if (Interlocked.CompareExchange(ref state, Abandoned, Queued) == Queued)
+                    {
+                        throw new BridgeException($"Service Studio didn't get to it within {timeoutSeconds} s, with no dialog the bridge could see: it may be busy. Try again shortly.");
+                    }
+
+                    var asking = TryOpenDialogs() is { Count: > 0 } open ? $", showing {string.Join("; ", open.Select(d => $"\"{d.Title}\""))}" : string.Empty;
+                    throw new BridgeException($"Service Studio is still at it after {timeoutSeconds} s{asking}; it carries on (once anything it asks is answered), and the result will show in Service Studio.");
+                }
             }
         }
         catch (AggregateException ex)

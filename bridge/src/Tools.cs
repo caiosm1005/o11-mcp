@@ -21,7 +21,9 @@ internal static class Tools
     [
         new("status",
             "The bridge and Service Studio versions, each Service Studio window (its module, the environment it's signed in to, host and name, and the user), " +
-            "and Capabilities: whether openModule and addDependency work with this Service Studio build. Call it first.",
+            "Capabilities: whether openModule, addDependency, layoutFlows and the dialog watch work with this Service Studio build, " +
+            "AnsweredPrompts: the missing-dependencies prompts the bridge closed after openModule, and Windows: Service Studio's open windows (title, kind, " +
+            "whether the bridge counts it as a dialog). Call it first.",
             [],
             _ => Studio.Status()),
         new("listApplications",
@@ -68,10 +70,15 @@ internal static class Tools
             ReadOnly: false),
         new("openModule",
             "Opens a module in Service Studio as Open from environment does: Service Studio downloads it into a new tab itself, so no file is written. " +
+            "By default that is the published version (the latest upload when none is published); version opens the latest upload or any other. " +
             "Use it only when Service Studio's own server has no openModule, and only for a module the user's request names. " +
+            "A module already open comes back as alreadyOpen with the version its tab holds; asking for another version of it fails until its tab is closed. " +
+            "Once it has loaded, the bridge cancels Service Studio's reference check (\"Getting references from …\") as its Cancel button does, or closes the " +
+            "missing-dependencies prompt that follows (Manage Dependencies doesn't open); status lists either under AnsweredPrompts, and the references stay unchecked. " +
             "It returns once Service Studio starts opening the module: wait until Service Studio's own server lists it before working on it.",
-            [Host, Module],
-            a => Studio.OpenModule(Text(a, "host"), Required(a, "module")),
+            [Host, Module,
+                new("version", "string", "\"published\" (the default), \"latest\" for the newest upload even if unpublished, or a version number from getModuleVersions.")],
+            a => Studio.OpenModule(Text(a, "host"), Required(a, "module"), Text(a, "version")),
             ReadOnly: false),
         new("addDependency",
             "Adds a dependency on another module's public element (an action, entity, structure, block…) to a module open in Service Studio, " +
@@ -79,7 +86,8 @@ internal static class Tools
             "producers expose that name, it lists them instead: ask the user which one, then pass its producer. The open module gets an unsaved " +
             "change; nothing is saved or published. Add dependencies before startOmlEditSession: it refuses while Service Studio's own server " +
             "has an edit session or unmerged changes on the module, because that session's next omlMerge would remove the dependency. " +
-            "It checks the module before and after: an element already referenced comes back as AlreadyReferenced, and one the module can't use " +
+            "It checks the module before and after: an element already referenced comes back as AlreadyReferenced (a hidden stub, an entity that " +
+            "came in only as a parameter's or attribute's type, isn't a reference: it gets ticked), and one the module can't use " +
             "(a client action in a Service module, for one) fails instead of reporting success.",
             [Host,
                 new("module", "string", "The module open in Service Studio that gets the dependency.", Required: true),
@@ -87,6 +95,16 @@ internal static class Tools
                 new("producer", "string", "The producer module that exposes it (exact name; (System) for the platform's own elements), when several do."),
                 new("kind", "string", "The element's kind, as searchPublicElements reports it (Action, Entity, Structure, WebBlock…), when one name has several kinds.")],
             a => Studio.AddDependency(Text(a, "host"), Required(a, "module"), Required(a, "element"), Text(a, "producer"), Text(a, "kind")),
+            ReadOnly: false),
+        new("uploadModules",
+            "Uploads open modules to the environment without publishing them, as Service Studio's Upload command does: each gets a new version on the server " +
+            "(getModuleVersions lists it), nothing is compiled or deployed, and the published version stays as it is. By default every module open in Service Studio " +
+            "on the environment, one at a time; each result says uploaded (with the new version number), unchanged (no new version), or failed (with the reason). " +
+            "It uploads the module as open in Service Studio: changes an edit session of Service Studio's own server hasn't merged aren't in it (the result warns). " +
+            "When the server already has a module's version, Service Studio says Upload Skipped: the bridge closes that message and reports the module unchanged. " +
+            "Service Studio may ask something else while uploading (a newer version on the server to merge, say): the result names that dialog for the user to answer.",
+            [Host, new("modules", "string", "Modules to upload, comma-separated. Empty: every module open in Service Studio on the environment.")],
+            a => Studio.UploadModules(Text(a, "host"), Text(a, "modules")),
             ReadOnly: false),
         new("layoutFlows",
             "Lays out the logic flows of a module open in Service Studio: every node on Service Studio's grid, and comment notes wrapped and placed. " +

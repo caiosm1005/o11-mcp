@@ -38,8 +38,9 @@ soon as the official server covers the same thing: see [Rules for agents](#rules
    fixes this file describes may be missing: offer the update
    ([Offering to install](#offering-to-install-agents)) before you go on. If the user declines,
    carry on with what the installed bridge offers, and don't offer again in the same
-   conversation. `status` also gives `Capabilities`: whether `openModule` and `addDependency`
-   work with this Service Studio build, which updates itself. When one isn't `ok`, don't call it:
+   conversation. `status` also gives `Capabilities`: whether `openModule`, `addDependency`,
+   `layoutFlows` and the dialog watch (`DialogWatch`) work with this Service Studio build, which
+   updates itself. When one isn't `ok`, don't call it:
    tell the user, and give the official way (ask them to open the module, or to add the
    dependency in Manage Dependencies).
 
@@ -61,9 +62,10 @@ and user).
 | `searchPublicElements` | Public elements across the environment, by name, kind and producer module | Only the open module's references are visible |
 | `listReferenceable` | The producers a module can reference, with signature hashes | No equivalent of Manage Dependencies' list |
 | `getApplicationDependencies` | An application's dependencies on other applications | No application-level view |
-| `openModule` | Opens a module in a new Service Studio tab, as Open from environment does; no file is written | Older builds have no `openModule` |
+| `openModule` | Opens a module in a new Service Studio tab, as Open from environment does: the published version, or `version` (`latest`, a number); no file is written | Older builds have no `openModule` |
 | `addDependency` | Adds a dependency on another module's public element to a module open in Service Studio, unsaved | `AddDependency` fails inside `applyModelApiCode` (upstream issue #10) |
 | `layoutFlows` | Lays out a module's logic flows on Service Studio's grid and wraps and places their notes, as one unsaved, undoable step | Layout is the agent's to do by hand, flow by flow (SKILL.md § 3.1) |
+| `uploadModules` | Uploads open modules to the environment as new versions, without publishing them, as Service Studio's Upload command does; one at a time, each with its result | Only `omlPublish`, which also compiles and deploys |
 
 Long lists come in pages: results say how many there are in all, and take a `limit`.
 
@@ -78,17 +80,38 @@ Requests that need the bridge, because Service Studio's own server can't answer 
 - "Is there a public action, entity or block for Y I can reuse?": `searchPublicElements`.
 - "What can this module reference?": `listReferenceable`.
 - "What does application A depend on?": `getApplicationDependencies`.
-- "Open module X": `openModule`.
+- "Open module X": `openModule`; "…on its latest (unpublished) version": `openModule` with
+  `version: "latest"`.
 - "Add a dependency on X", or any change that uses another module's element ("create a wrapper
   for action X in module M"): `addDependency`.
 - "Lay out the flows", "tidy up this action": `layoutFlows`.
+- "Upload all open modules", "save my changes to the server without publishing":
+  `uploadModules` (no `modules`: every module open on the environment).
 
 How the bridge fits with SKILL.md:
 
 - **Module not open (§ 0.1)?** When the server has no `searchApps` or `openModule`, use
   `listModules` (with `filter` or `application`) to confirm the module's exact name, then open it
-  with the bridge's `openModule`, only when the user's request names it. It returns while Service
-  Studio is still opening the module: wait until Service Studio's own server lists it.
+  with the bridge's `openModule`, only when the user's request names it. Like Open from
+  environment, it opens the published version unless you pass `version`: `latest` for the newest
+  upload, which may be unpublished work, or a number from `getModuleVersions`. A module already
+  open comes back as `alreadyOpen` with the version its tab holds; asking for another version of it
+  fails until the user closes that tab. It returns while Service Studio is still opening the module:
+  wait until Service Studio's own server lists it. Once the module has loaded, Service Studio checks
+  its references against the server ("Getting references from …", which takes a while in a module
+  with many producers) and, when some are incompatible or missing, asks whether to manage them now.
+  For a few minutes after `openModule`, the bridge cancels that check as its Cancel button does, and
+  closes the prompt as its close button does if it comes anyway, so Manage Dependencies doesn't
+  open; `status` lists each under `AnsweredPrompts`. Service Studio holds that prompt until the
+  module's tab is selected, and opens queued after it wait meanwhile, so the bridge brings each
+  module it opens to the front once it has loaded (the tabs switch, as a foreground open does). Either way the references stay as the module
+  saved them, unchecked: refresh them (§ 3.2) before relying on producers' latest signatures, and
+  fix missing ones with `addDependency`.
+- **A dialog open in Service Studio** stops the module's queue, where `addDependency` and
+  `layoutFlows` wait. They fail within seconds, naming the dialog ("Service Studio has a dialog
+  open (…)"): ask the user to answer it, then try again. The bridge answers no dialog but the
+  prompt above. Bridges older than 0.5.1 waited two minutes, past the MCP client's own timeout, so
+  the caller saw only "The operation timed out."
 - **A change needs another module's element?** Add the dependency first, then
   `startOmlEditSession`: the session's snapshot is the module as open in Service Studio, unsaved
   dependency included, so `applyModelApiCode` can use the element and `omlMerge` keeps it. Not the
@@ -101,6 +124,12 @@ How the bridge fits with SKILL.md:
   by part of the name. It reads the module before and after: an element already referenced comes
   back as `AlreadyReferenced` with nothing changed, and one the module can't use (a client action
   in a Service module, for one) fails rather than reporting success.
+- **A hidden stub isn't a reference.** An entity that came in only as the type of something the
+  module uses (a referenced action's parameter, an attribute) sits under the reference with
+  `Hidden` set and only its identifier: expressions that use it fail with `Can't identify`, and
+  Manage Dependencies shows it unticked. `addDependency` ticks it (its note says it was a stub)
+  and fails if it is still hidden afterwards. Bridges older than 0.5.0 answered
+  `AlreadyReferenced` for a stub and changed nothing.
 - **The platform's own elements** (`ListAppend`, `Site_Property`, `User`…) come under the producer
   `(System)`, as in Manage Dependencies, and `addDependency` adds them to the module's `(System)`
   reference. Bridges older than 0.3.1 listed them under `ServiceCenter`, and `addDependency`
@@ -113,6 +142,16 @@ How the bridge fits with SKILL.md:
   adopted it. Run it once the edit session has ended (after the last `omlMerge` and
   `endOmlEditSession`): it refuses while a session is open, because that session's next merge
   would put the old positions back. A project can run it from a hook after every merge.
+- **Uploading without publishing?** `uploadModules` adds a version on the server for each module,
+  as Service Studio's Upload does: nothing is compiled or deployed, and the published version stays
+  as it is. Like `omlPublish` (§ 3.2), call it only when the user asks to upload. It uploads the
+  module as open in Service Studio, so merge first: an edit session's unmerged changes aren't in
+  it, and the result warns when a session is open. Each module's result is `uploaded` with its new
+  version number, `unchanged` (no new version: nothing to upload), or `failed` with the reason. When
+  the server already has the module's version, Service Studio shows "Upload Skipped": the bridge
+  closes it and reports `unchanged`. When Service Studio asks something else during an upload (a
+  newer version on the server to merge, say), the result names that dialog: the user answers it in
+  Service Studio.
 - **Comparing with an earlier version**: `getModuleVersions` then `downloadModule` with that
   version number gives you its OML file.
 
@@ -134,7 +173,7 @@ The bridge's code is in the fork's [`bridge/`](../bridge/) folder: a .NET startu
 inside Service Studio and serves MCP on `http://127.0.0.1:48720/mcp`. It needs macOS (Windows
 isn't scripted yet) and the .NET 10 SDK.
 
-**Current version: 0.4.0.** An installed bridge reports its version in `status` (`Bridge`) and
+**Current version: 0.6.5.** An installed bridge reports its version in `status` (`Bridge`) and
 in `~/Library/Application Support/ServiceStudioBridge/bin/VERSION`. An install without that file
 is older than 0.2.0.
 

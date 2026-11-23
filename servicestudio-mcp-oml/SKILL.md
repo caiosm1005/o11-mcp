@@ -158,9 +158,10 @@ This fork adds a second MCP server, the **Service Studio MCP Bridge**
 environment Service Studio is signed in to, so it also reaches modules that aren't open:
 `listApplications`, `listModules`, `getModuleVersions`, `downloadModule` (any version's OML
 file), `getConsumers`, `searchPublicElements`, `listReferenceable` and
-`getApplicationDependencies`. It also opens modules (`openModule`) and adds dependencies to an
-open module (`addDependency`), and lays out a module's flows (`layoutFlows`), without saving or
-publishing. It takes no session token.
+`getApplicationDependencies`. It also opens modules (`openModule`), adds dependencies to an open
+module (`addDependency`) and lays out a module's flows (`layoutFlows`), without saving or
+publishing, and uploads open modules as new versions without publishing them (`uploadModules`).
+It takes no session token.
 **Read [`BRIDGE.md`](BRIDGE.md) before your first bridge call.**
 
 - **Service Studio's own server comes first.** Use a bridge tool only for what no
@@ -737,6 +738,9 @@ Their schemas don't declare `sessionToken`; send it anyway (§ 0):
   `{ "published": false, "status": "blocked", "reason": "Publishing requires a write permission the user has not granted. Ask the user to publish from Service Studio, or to allow automatic merge and publish in the MCP Server dialog.", "messages": [] }`
   (verified 2026-10-03). Then tell the user, and let them publish from Service Studio or change
   the setting. Don't retry.
+  > **This fork:** to upload without publishing (a new version on the server, nothing compiled or
+  > deployed), use the bridge's `uploadModules` (BRIDGE.md), on the same terms: only when the user
+  > asks.
 
 ## 4. Default imports
 
