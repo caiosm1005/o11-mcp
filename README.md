@@ -56,6 +56,7 @@ This fork adds a second MCP server, the **Service Studio MCP Bridge**, for thing
 | Upload open modules as new versions, without publishing | — (`omlPublish` uploads and publishes) | `uploadModules` |
 | Create an application, or change its name, description, colour, icon or kind | — | `createApplication`, `updateApplication` |
 | Create a module, or convert one to Service or a Library | — | `createModule`, `convertModule` |
+| Show the tenant identifier on a referenced multi-tenant entity | — (read-only on a reference) | `setReferenceTenantIdentifier` |
 
 Every result names the environment it came from (host, name and user).
 

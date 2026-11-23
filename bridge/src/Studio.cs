@@ -419,6 +419,8 @@ internal static partial class Studio
             // createModule runs the Create Module dialog's commands; convertModule the Module › Convert ones.
             CreateModule = Check(() => CreateModuleMembers()),
             ConvertModule = Check(() => ConvertModuleMembers()),
+            // setReferenceTenantIdentifier sets a property of Service Studio's own model object for a referenced entity.
+            ReferenceTenantIdentifier = Check(() => ReferenceEntityMembers()),
         };
     }
 

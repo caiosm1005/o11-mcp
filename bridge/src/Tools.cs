@@ -21,7 +21,7 @@ internal static class Tools
     [
         new("status",
             "The bridge and Service Studio versions, each Service Studio window (its module, the environment it's signed in to, host and name, and the user), " +
-            "Capabilities: whether openModule, addDependency, layoutFlows, the application and module tools and the dialog watch work with this Service Studio build, " +
+            "Capabilities: whether openModule, addDependency, layoutFlows, the application and module tools, setReferenceTenantIdentifier and the dialog watch work with this Service Studio build, " +
             "AnsweredPrompts: the reference checks the bridge cancelled and the check's messages it closed after openModule, each with what it said, and Windows: " +
             "Service Studio's open windows (title, kind, whether the bridge counts it as a dialog, the module whose tab it belongs to, a message's id and type). Call it first.",
             [],
@@ -166,6 +166,18 @@ internal static class Tools
                 new("to", "string", "Service or ReactiveLibrary.", Required: true)],
             a => Studio.ConvertModule(Text(a, "host"), Required(a, "module"), Required(a, "to")),
             ReadOnly: false),
+        new("setReferenceTenantIdentifier",
+            "Sets Show Tenant Identifier on a module's reference to another module's multi-tenant entity, as the entity's properties in Service Studio do " +
+            "(the Model API only reads it on a reference). The setting is the consuming module's own: the producer is untouched. The open module gets one " +
+            "unsaved, undoable change; nothing is saved or published. It refuses while Service Studio's own server has an edit session or unmerged changes " +
+            "on the module, whose next omlMerge would put the old value back: set it before startOmlEditSession. Returns the value before and after.",
+            [Host,
+                new("module", "string", "The module open in Service Studio that holds the reference.", Required: true),
+                new("producer", "string", "The referenced module, as the module's dependencies name it.", Required: true),
+                new("entity", "string", "The referenced entity's name.", Required: true),
+                new("value", "boolean", "true to show the tenant identifier, false to hide it.", Required: true)],
+            a => Studio.SetReferenceTenantIdentifier(Text(a, "host"), Required(a, "module"), Required(a, "producer"), Required(a, "entity"), RequiredFlag(a, "value")),
+            ReadOnly: false),
         new("layoutFlows",
             "Lays out the logic flows of a module open in Service Studio: every node on Service Studio's grid, and comment notes wrapped and placed. " +
             "The changed positions go into the module as one unsaved, undoable step (Layout Flows); nothing is saved or published. " +
@@ -256,6 +268,9 @@ internal static class Tools
         var text when int.TryParse(text, out var number) => number,
         _ => throw new ArgumentException($"{name} must be a whole number."),
     };
+
+    private static bool RequiredFlag(JsonObject args, string name) =>
+        args[name] == null ? throw new ArgumentException($"{name} is required.") : Flag(args, name);
 
     private static bool Flag(JsonObject args, string name) => args[name] switch
     {

@@ -8,7 +8,7 @@
     when the two differ.
   -->
   <PropertyGroup>
-    <Version>0.8.0</Version>
+    <Version>0.9.0</Version>
   </PropertyGroup>
 
 </Project>

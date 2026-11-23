@@ -92,13 +92,14 @@ check "initialize echoes a supported protocol" '"2025-06-18"' "$(printf '%s' "$o
 check "initialize names the server" yes "$(printf '%s' "$out" | grep -q '"name":"servicestudio-bridge"' && echo yes || echo no)"
 
 out=$(rpc '{"jsonrpc":"2.0","id":2,"method":"tools/list"}')
-check "tools/list has 18 tools" 18 "$(printf '%s' "$out" | grep -o '"inputSchema"' | wc -l | tr -d ' ')"
-for t in status listApplications listModules getModuleVersions getConsumers getElementConsumers searchPublicElements getApplicationDependencies listReferenceable downloadModule openModule addDependency uploadModules layoutFlows createApplication updateApplication createModule convertModule; do
+check "tools/list has 19 tools" 19 "$(printf '%s' "$out" | grep -o '"inputSchema"' | wc -l | tr -d ' ')"
+for t in status listApplications listModules getModuleVersions getConsumers getElementConsumers searchPublicElements getApplicationDependencies listReferenceable downloadModule openModule addDependency uploadModules layoutFlows createApplication updateApplication createModule convertModule setReferenceTenantIdentifier; do
   check "tool $t listed" yes "$(printf '%s' "$out" | grep -q "\"name\":\"$t\"" && echo yes || echo no)"
 done
 # downloadModule writes a file; openModule, addDependency, layoutFlows, createModule and convertModule change what's
-# open in Service Studio; uploadModules adds versions on the server; createApplication and updateApplication change applications.
-check "nine tools aren't read-only" 9 "$(printf '%s' "$out" | grep -o '"readOnlyHint":false' | wc -l | tr -d ' ')"
+# open in Service Studio, as does setReferenceTenantIdentifier; uploadModules adds versions on the server; createApplication and
+# updateApplication change applications.
+check "ten tools aren't read-only" 10 "$(printf '%s' "$out" | grep -o '"readOnlyHint":false' | wc -l | tr -d ' ')"
 
 out=$(rpc '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"status","arguments":{}}}')
 check "status succeeds outside Service Studio" yes "$(printf '%s' "$out" | grep -q '"isError":false' && echo yes || echo no)"
@@ -178,6 +179,15 @@ check "convertModule doesn't convert to Reactive" yes "$(printf '%s' "$out" | gr
 
 out=$(rpc '{"jsonrpc":"2.0","id":28,"method":"tools/call","params":{"name":"convertModule","arguments":{"module":"X","to":"Service"}}}')
 check "convertModule fails cleanly outside Service Studio" yes "$(printf '%s' "$out" | grep -q '"isError":true' && echo yes || echo no)"
+
+out=$(rpc '{"jsonrpc":"2.0","id":29,"method":"tools/call","params":{"name":"setReferenceTenantIdentifier","arguments":{"module":"X","producer":"Y","entity":"Z"}}}')
+check "setReferenceTenantIdentifier needs the value" yes "$(printf '%s' "$out" | grep -q 'value is required' && echo yes || echo no)"
+
+out=$(rpc '{"jsonrpc":"2.0","id":30,"method":"tools/call","params":{"name":"setReferenceTenantIdentifier","arguments":{"module":"X","producer":"Y","entity":"Z","value":"maybe"}}}')
+check "setReferenceTenantIdentifier takes true or false" yes "$(printf '%s' "$out" | grep -q 'value must be true or false' && echo yes || echo no)"
+
+out=$(rpc '{"jsonrpc":"2.0","id":31,"method":"tools/call","params":{"name":"setReferenceTenantIdentifier","arguments":{"module":"X","producer":"Y","entity":"Z","value":true}}}')
+check "setReferenceTenantIdentifier fails cleanly outside Service Studio" yes "$(printf '%s' "$out" | grep -q '"isError":true' && echo yes || echo no)"
 
 out=$(rpc '{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"deleteModule","arguments":{}}}')
 check "unknown tool -> -32602" yes "$(printf '%s' "$out" | grep -q '"code":-32602' && echo yes || echo no)"

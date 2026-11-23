@@ -39,8 +39,8 @@ soon as the official server covers the same thing: see [Rules for agents](#rules
    ([Offering to install](#offering-to-install-agents)) before you go on. If the user declines,
    carry on with what the installed bridge offers, and don't offer again in the same
    conversation. `status` also gives `Capabilities`: whether `openModule`, `addDependency`,
-   `layoutFlows`, the application tools (`Applications`), `createModule`, `convertModule` and the
-   dialog watch (`DialogWatch`) work with this Service Studio build, which updates itself. When one
+   `layoutFlows`, the application tools (`Applications`), `createModule`, `convertModule`,
+   `setReferenceTenantIdentifier` (`ReferenceTenantIdentifier`) and the dialog watch (`DialogWatch`) work with this Service Studio build, which updates itself. When one
    isn't `ok`, don't call it: tell the user, and give the official way (ask them to open the
    module, to add the dependency in Manage Dependencies, or to create or convert it in Service
    Studio).
@@ -72,6 +72,7 @@ and user).
 | `updateApplication` | Changes an application's name, description, primary colour or icon, or converts it to Service | No way to edit an application |
 | `createModule` | Creates a module in an application, as the Create Module dialog does, and opens it unsaved | No way to create a module |
 | `convertModule` | Converts an open module to Service or to a Library, as Module › Convert does, unsaved | No way to change a module's kind |
+| `setReferenceTenantIdentifier` | Sets Show Tenant Identifier on an open module's reference to a multi-tenant entity, unsaved | The Model API only reads it on a reference |
 
 Long lists come in pages: results say how many there are in all, and take a `limit`.
 
@@ -100,6 +101,8 @@ Requests that need the bridge, because Service Studio's own server can't answer 
 - "Create a module", "add a service module to app A": `createModule`.
 - "Make this module a service / a library": `convertModule`; "make the app a Service
   application": `updateApplication` with `kind: Service`, once its modules are Service modules.
+- "Show the tenant identifier on the referenced entity X", "read every tenant's records of X":
+  `setReferenceTenantIdentifier`.
 
 How the bridge fits with SKILL.md:
 
@@ -231,6 +234,15 @@ How the bridge fits with SKILL.md:
   when every module the server has in it is a Service module or an extension. So: convert each
   module (`convertModule`), publish it, then `updateApplication` with `kind: Service`. It refuses
   the Others application, a system one, and one that is Service or a Library already.
+- **Show Tenant Identifier on a reference.** A consumer sets it on its own reference to another
+  module's multi-tenant entity, so its queries read every tenant's records and see the tenant
+  identifier, with the producer untouched. The Model API exposes it read-only on a reference
+  (`IEntitySignature.ShowTenantIdentifier`), so `applyModelApiCode` can't set it:
+  `setReferenceTenantIdentifier` does, as one unsaved, undoable change. As with `addDependency`, set
+  it before `startOmlEditSession` (it refuses while a session or unmerged changes are on the
+  module), and read it back with `runQuery` `Root { References { Name Entities { Name
+  ShowTenantIdentifier } } }`. It refuses an entity that isn't multi-tenant, where Service Studio
+  greys the property out, and a hidden stub (add the dependency first).
 - **Comparing with an earlier version**: `getModuleVersions` then `downloadModule` with that
   version number gives you its OML file.
 
@@ -252,7 +264,7 @@ The bridge's code is in the fork's [`bridge/`](../bridge/) folder: a .NET startu
 inside Service Studio and serves MCP on `http://127.0.0.1:48720/mcp`. It needs macOS (Windows
 isn't scripted yet) and the .NET 10 SDK.
 
-**Current version: 0.8.0.** An installed bridge reports its version in `status` (`Bridge`) and
+**Current version: 0.9.0.** An installed bridge reports its version in `status` (`Bridge`) and
 in `~/Library/Application Support/ServiceStudioBridge/bin/VERSION`. An install without that file
 is older than 0.2.0.
 

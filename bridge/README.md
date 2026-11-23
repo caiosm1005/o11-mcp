@@ -41,6 +41,7 @@ or a session secret.
 | `updateApplication` | Changes an application's name, description, colour or icon, or converts it to Service |
 | `createModule` | Creates a module in an application, as *Create Module* does, open and unsaved |
 | `convertModule` | Converts an open module to Service or a Library, as *Module › Convert* does, unsaved |
+| `setReferenceTenantIdentifier` | Sets *Show Tenant Identifier* on an open module's reference to a multi-tenant entity (unsaved) |
 
 Every result says which environment it came from: host, display name and user.
 
@@ -57,7 +58,8 @@ Service Studio is signed in to several at once, the tools ask for a `host` inste
 ## Safety
 
 - **Never saves or publishes a module.** `openModule`, `addDependency`, `layoutFlows`,
-  `createModule` and `convertModule` change only what's open in Service Studio, as unsaved edits;
+  `createModule`, `convertModule` and `setReferenceTenantIdentifier` change only what's open in
+  Service Studio, as unsaved edits;
   you save and publish. `uploadModules` adds versions without publishing them, and
   `createApplication` and `updateApplication` change applications on the server: agents call them
   only when you ask.
