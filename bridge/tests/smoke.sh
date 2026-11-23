@@ -92,13 +92,13 @@ check "initialize echoes a supported protocol" '"2025-06-18"' "$(printf '%s' "$o
 check "initialize names the server" yes "$(printf '%s' "$out" | grep -q '"name":"servicestudio-bridge"' && echo yes || echo no)"
 
 out=$(rpc '{"jsonrpc":"2.0","id":2,"method":"tools/list"}')
-check "tools/list has 14 tools" 14 "$(printf '%s' "$out" | grep -o '"inputSchema"' | wc -l | tr -d ' ')"
-for t in status listApplications listModules getModuleVersions getConsumers getElementConsumers searchPublicElements getApplicationDependencies listReferenceable downloadModule openModule addDependency uploadModules layoutFlows; do
+check "tools/list has 18 tools" 18 "$(printf '%s' "$out" | grep -o '"inputSchema"' | wc -l | tr -d ' ')"
+for t in status listApplications listModules getModuleVersions getConsumers getElementConsumers searchPublicElements getApplicationDependencies listReferenceable downloadModule openModule addDependency uploadModules layoutFlows createApplication updateApplication createModule convertModule; do
   check "tool $t listed" yes "$(printf '%s' "$out" | grep -q "\"name\":\"$t\"" && echo yes || echo no)"
 done
-# downloadModule writes a file; openModule, addDependency and layoutFlows change what's open in Service Studio;
-# uploadModules adds versions on the server.
-check "five tools aren't read-only" 5 "$(printf '%s' "$out" | grep -o '"readOnlyHint":false' | wc -l | tr -d ' ')"
+# downloadModule writes a file; openModule, addDependency, layoutFlows, createModule and convertModule change what's
+# open in Service Studio; uploadModules adds versions on the server; createApplication and updateApplication change applications.
+check "nine tools aren't read-only" 9 "$(printf '%s' "$out" | grep -o '"readOnlyHint":false' | wc -l | tr -d ' ')"
 
 out=$(rpc '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"status","arguments":{}}}')
 check "status succeeds outside Service Studio" yes "$(printf '%s' "$out" | grep -q '"isError":false' && echo yes || echo no)"
@@ -108,7 +108,7 @@ current=$(sed -n 's/^\*\*Current version: \([0-9.]*\)\.\*\*.*/\1/p' "$repo/../se
 [ -n "$current" ] || current="(no **Current version: x.y.z.** line in BRIDGE.md)"
 check "status reports BRIDGE.md's current version" "$current" "$(printf '%s' "$out" | grep -o 'Bridge\\":\\"[0-9.]*' | sed 's/.*"//')"
 check "status shows the configured port" yes "$(printf '%s' "$out" | grep -q "Port\\\\\":$port" && echo yes || echo no)"
-check "status reports capabilities" yes "$(printf '%s' "$out" | grep -q 'Capabilities' && printf '%s' "$out" | grep -q 'AddDependency' && printf '%s' "$out" | grep -q 'DialogWatch' && printf '%s' "$out" | grep -q 'AnsweredPrompts' && printf '%s' "$out" | grep -q '"Upload' && echo yes || echo no)"
+check "status reports capabilities" yes "$(printf '%s' "$out" | grep -q 'Capabilities' && printf '%s' "$out" | grep -q 'AddDependency' && printf '%s' "$out" | grep -q 'DialogWatch' && printf '%s' "$out" | grep -q 'AnsweredPrompts' && printf '%s' "$out" | grep -q '"Upload' && printf '%s' "$out" | grep -q 'ConvertModule' && echo yes || echo no)"
 
 out=$(rpc '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"listModules","arguments":{}}}')
 check "listModules fails cleanly outside Service Studio" yes "$(printf '%s' "$out" | grep -q '"isError":true' && echo yes || echo no)"
@@ -151,6 +151,33 @@ check "getElementConsumers needs the element" yes "$(printf '%s' "$out" | grep -
 
 out=$(rpc '{"jsonrpc":"2.0","id":19,"method":"tools/call","params":{"name":"getElementConsumers","arguments":{"element":"Y"}}}')
 check "getElementConsumers fails cleanly outside Service Studio" yes "$(printf '%s' "$out" | grep -q '"isError":true' && echo yes || echo no)"
+
+out=$(rpc '{"jsonrpc":"2.0","id":20,"method":"tools/call","params":{"name":"createApplication","arguments":{"name":"X"}}}')
+check "createApplication needs the kind" yes "$(printf '%s' "$out" | grep -q 'kind is required' && echo yes || echo no)"
+
+out=$(rpc '{"jsonrpc":"2.0","id":21,"method":"tools/call","params":{"name":"createApplication","arguments":{"name":"X","kind":"Blue"}}}')
+check "createApplication refuses an unknown kind" yes "$(printf '%s' "$out" | grep -q 'kind must be one of' && echo yes || echo no)"
+
+out=$(rpc '{"jsonrpc":"2.0","id":22,"method":"tools/call","params":{"name":"createApplication","arguments":{"name":"X","kind":"Reactive","primaryColor":"red"}}}')
+check "createApplication refuses a colour that isn't #RRGGBB" yes "$(printf '%s' "$out" | grep -q 'primaryColor must be a #RRGGBB' && echo yes || echo no)"
+
+out=$(rpc '{"jsonrpc":"2.0","id":23,"method":"tools/call","params":{"name":"createApplication","arguments":{"name":"X","kind":"Reactive","icon":"icon.png"}}}')
+check "createApplication refuses a relative icon path" yes "$(printf '%s' "$out" | grep -q 'icon must be an absolute path' && echo yes || echo no)"
+
+out=$(rpc '{"jsonrpc":"2.0","id":24,"method":"tools/call","params":{"name":"updateApplication","arguments":{"application":"X"}}}')
+check "updateApplication needs a change" yes "$(printf '%s' "$out" | grep -q 'Pass at least one of' && echo yes || echo no)"
+
+out=$(rpc '{"jsonrpc":"2.0","id":25,"method":"tools/call","params":{"name":"updateApplication","arguments":{"application":"X","kind":"Reactive"}}}')
+check "updateApplication converts an application only to Service" yes "$(printf '%s' "$out" | grep -q 'only to Service' && echo yes || echo no)"
+
+out=$(rpc '{"jsonrpc":"2.0","id":26,"method":"tools/call","params":{"name":"createModule","arguments":{"application":"X"}}}')
+check "createModule needs the name" yes "$(printf '%s' "$out" | grep -q 'name is required' && echo yes || echo no)"
+
+out=$(rpc '{"jsonrpc":"2.0","id":27,"method":"tools/call","params":{"name":"convertModule","arguments":{"module":"X","to":"Reactive"}}}')
+check "convertModule doesn't convert to Reactive" yes "$(printf '%s' "$out" | grep -q "convert to Reactive" && echo yes || echo no)"
+
+out=$(rpc '{"jsonrpc":"2.0","id":28,"method":"tools/call","params":{"name":"convertModule","arguments":{"module":"X","to":"Service"}}}')
+check "convertModule fails cleanly outside Service Studio" yes "$(printf '%s' "$out" | grep -q '"isError":true' && echo yes || echo no)"
 
 out=$(rpc '{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"deleteModule","arguments":{}}}')
 check "unknown tool -> -32602" yes "$(printf '%s' "$out" | grep -q '"code":-32602' && echo yes || echo no)"

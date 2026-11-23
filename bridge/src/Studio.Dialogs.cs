@@ -223,6 +223,27 @@ internal static partial class Studio
         Opening[module] = new PendingOpen(DateTime.UtcNow, host, key);
         LoadedAt.TryRemove(module, out _);
         CheckCancelled.TryRemove(module, out _);
+        StartWatch();
+    }
+
+    /// <summary>A module convertModule is converting: since when, its environment, and the ids of the messages to close in its tab.</summary>
+    private sealed record PendingConversion(DateTime Since, string? Host, HashSet<string> Ids);
+
+    /// <summary>The modules convertModule is converting, by name.</summary>
+    private static readonly ConcurrentDictionary<string, PendingConversion> Converting = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// For a few minutes after convertModule, closes the messages Service Studio shows in the
+    /// converted module's tab with these ids (its "publish now?" question), as their close button does.
+    /// </summary>
+    private static void WatchConversion(string module, string? host, HashSet<string> ids)
+    {
+        Converting[module] = new PendingConversion(DateTime.UtcNow, host, ids);
+        StartWatch();
+    }
+
+    private static void StartWatch()
+    {
         if (Interlocked.Exchange(ref watching, 1) == 0)
         {
             _ = Task.Run(WatchLoop);
@@ -245,23 +266,39 @@ internal static partial class Studio
                     }
                 }
 
-                if (Opening.IsEmpty)
+                foreach (var (module, pending) in Converting)
+                {
+                    if (DateTime.UtcNow - pending.Since > PromptWatch)
+                    {
+                        Converting.TryRemove(module, out _);
+                    }
+                }
+
+                if (Opening.IsEmpty && Converting.IsEmpty)
                 {
                     break;
                 }
 
                 try
                 {
-                    CancelReferenceCheck();
-                    // The reference check's messages, by id, in the tabs being opened; matching the
-                    // missing-dependencies prompt by its title still catches it in any other window.
-                    AnswerReferenceCheckMessages();
-                    AnswerMissingDependencies();
-                    BringLoadedTabsForward();
+                    if (!Opening.IsEmpty)
+                    {
+                        CancelReferenceCheck();
+                        // The reference check's messages, by id, in the tabs being opened; matching the
+                        // missing-dependencies prompt by its title still catches it in any other window.
+                        AnswerReferenceCheckMessages();
+                        AnswerMissingDependencies();
+                        BringLoadedTabsForward();
+                    }
+
+                    if (!Converting.IsEmpty)
+                    {
+                        AnswerConversionMessages();
+                    }
                 }
                 catch (Exception ex)
                 {
-                    Log.Info($"Watching for the missing-dependencies prompt: {Reflect.Unwrap(ex).Message}");
+                    Log.Info($"Watching Service Studio's dialogs: {Reflect.Unwrap(ex).Message}");
                 }
 
                 await Task.Delay(500);
@@ -270,7 +307,7 @@ internal static partial class Studio
         finally
         {
             Interlocked.Exchange(ref watching, 0);
-            if (!Opening.IsEmpty && Interlocked.Exchange(ref watching, 1) == 0)
+            if ((!Opening.IsEmpty || !Converting.IsEmpty) && Interlocked.Exchange(ref watching, 1) == 0)
             {
                 _ = Task.Run(WatchLoop);   // a module came in as the loop was ending
             }
@@ -512,11 +549,46 @@ internal static partial class Studio
     private static void AnswerReferenceCheckMessages()
     {
         var ids = ReferenceCheckMessageIds();
+        var tabs = OnUiThread(() => LoadedPendingTabs().Select(t => (t.Module, t.Tab)).ToList());
+        CloseMessages(tabs, _ => ids, "opening", "it isn't the reference check's");
+    }
+
+    /// <summary>
+    /// Closes the messages convertModule registered for the converted module's tab (Service Studio's
+    /// "publish now?" question after a conversion), as their close button does: No, not now.
+    /// </summary>
+    private static void AnswerConversionMessages()
+    {
+        var tabs = OnUiThread(() =>
+        {
+            var runtimeType = Reflect.FindType("ServiceStudio.Presenter.RuntimeImplementation", "ServiceStudio.Presenter");
+            return Reflect.Enumerate(Reflect.TryGet(Reflect.Static(runtimeType, "Instance"), "Aggregators"))
+                .Select(a => (Module: Reflect.TryGet(Reflect.TryGet(a, "OwnerESpace"), "Name") as string, Tab: a))
+                .Where(t => t.Module != null && Converting.ContainsKey(t.Module))
+                .Select(t => (t.Module!, t.Tab))
+                .ToList();
+        });
+        CloseMessages(tabs, module => Converting.TryGetValue(module, out var pending) ? pending.Ids : new HashSet<string>(), "converting", "it isn't the conversion's");
+    }
+
+    /// <summary>
+    /// Closes, as their close button does, the messages in these tabs whose id the module's set has,
+    /// and records each under AnsweredPrompts. Closing the window, rather than pressing a button, gives
+    /// the message's own Cancel answer. Every other message is left for the user.
+    /// </summary>
+    private static void CloseMessages(List<(string Module, object Tab)> tabs, Func<string, IReadOnlySet<string>> ids, string doing, string leftBecause)
+    {
+        if (tabs.Count == 0)
+        {
+            return;
+        }
+
         var closed = OnUiThread(() =>
         {
             var done = new List<(string Module, string Title, Message Message)>();
-            foreach (var (module, _, tab) in LoadedPendingTabs())
+            foreach (var (module, tab) in tabs)
             {
+                var ours = ids(module);
                 foreach (var window in TabDialogs(tab, modal: true))
                 {
                     if (MessageOf(window) is not { } message)
@@ -525,9 +597,9 @@ internal static partial class Studio
                     }
 
                     var title = WindowTitle(window);
-                    if (message.Id == null || !ids.Contains(message.Id))
+                    if (message.Id == null || !ours.Contains(message.Id))
                     {
-                        Describe(window, $"Message \"{title}\" ({message.Id}, {message.Type}) in {module}'s tab left for the user: it isn't the reference check's");
+                        Describe(window, $"Message \"{title}\" ({message.Id}, {message.Type}) in {module}'s tab left for the user: {leftBecause}");
                         continue;
                     }
 
@@ -540,7 +612,7 @@ internal static partial class Studio
         });
         foreach (var (module, title, message) in closed)
         {
-            Log.Info($"Closed Service Studio's \"{title}\" message ({message.Id}, {message.Type}) while opening {module}: {message.Text}");
+            Log.Info($"Closed Service Studio's \"{title}\" message ({message.Id}, {message.Type}) while {doing} {module}: {message.Text}");
             var text = message.Text.Length > 300 ? message.Text[..300] + "…" : message.Text;
             Remember(title, [module], $"Closed as its close button does, which gives the message's own Cancel answer. {message.Type}: {text}");
         }
@@ -560,32 +632,17 @@ internal static partial class Studio
             return referenceCheckMessages;
         }
 
-        var messageId = Reflect.FindType("OutSystems.RuntimeCommon.MessageId", "OutSystems.RuntimeCommon");
-        var getMessage = Reflect.FindType("OutSystems.RuntimeCommon.MessageDefinition", "OutSystems.RuntimeCommon")
-                .GetMethods(BindingFlags.Public | BindingFlags.Static)
-                .SingleOrDefault(m => m.Name == "GetMessage" && m.GetParameters() is [{ } first, { ParameterType.IsArray: true }] && first.ParameterType == messageId)
-            ?? throw new BridgeException("MessageDefinition.GetMessage(MessageId, params string[]) is missing");
+        var messageId = MessageIdType();
         var ids = new HashSet<string>(StringComparer.Ordinal);
         void Add(object? id)
         {
-            if (id == null)
+            if (id != null)
             {
-                return;
-            }
-
-            foreach (var text in new[] { Reflect.TryGet(getMessage.Invoke(null, [id, Array.Empty<string>()]), "Id"), Reflect.TryGet(id, "IdInResourceBaseName") })
-            {
-                if (text is string { Length: > 0 } s)
-                {
-                    ids.Add(s);
-                }
+                ids.UnionWith(MessageIdTexts(id));
             }
         }
 
-        var prompt = Reflect.FindType("ServiceStudio.Presenter.PresenterMessageId", "ServiceStudio.Presenter")
-            .GetField("Reference_IncompatibleOrMissingDetected", BindingFlags.Public | BindingFlags.Static)?.GetValue(null)
-            ?? throw new BridgeException("PresenterMessageId.Reference_IncompatibleOrMissingDetected is missing");
-        Add(prompt);
+        Add(PresenterMessage("Reference_IncompatibleOrMissingDetected"));
         // Every message catalogue of Service Studio's server communications: ServerCommunicationsMessageId,
         // and DebuggerCommunicationsMessageId for the debugger data an open also fetches.
         var server = Reflect.FindType("ServiceStudio.ServerCommunications.API.ServerCommunicationsMessageId", "ServiceStudio.ServerCommunications.API");
@@ -609,6 +666,34 @@ internal static partial class Studio
 
         return ids.Count > 1 ? referenceCheckMessages = ids : throw new BridgeException("Service Studio's catalogue gave no ids for the reference check's messages");
     }
+
+    private static Type MessageIdType() => Reflect.FindType("OutSystems.RuntimeCommon.MessageId", "OutSystems.RuntimeCommon");
+
+    /// <summary>A message of Service Studio's own catalogue (a PresenterMessageId), by name.</summary>
+    private static object PresenterMessage(string name) =>
+        Reflect.FindType("ServiceStudio.Presenter.PresenterMessageId", "ServiceStudio.Presenter")
+            .GetField(name, BindingFlags.Public | BindingFlags.Static)?.GetValue(null)
+        ?? throw new BridgeException($"PresenterMessageId.{name} is missing");
+
+    /// <summary>A message's definition as Service Studio builds it from its catalogue: id, type, texts, buttons.</summary>
+    private static object MessageDefinitionOf(object messageId)
+    {
+        var getMessage = Reflect.FindType("OutSystems.RuntimeCommon.MessageDefinition", "OutSystems.RuntimeCommon")
+                .GetMethods(BindingFlags.Public | BindingFlags.Static)
+                .SingleOrDefault(m => m.Name == "GetMessage" && m.GetParameters() is [{ } first, { ParameterType.IsArray: true }] && first.ParameterType == MessageIdType())
+            ?? throw new BridgeException("MessageDefinition.GetMessage(MessageId, params string[]) is missing");
+        return getMessage.Invoke(null, [messageId, Array.Empty<string>()]) ?? throw new BridgeException("Service Studio's catalogue has no such message");
+    }
+
+    /// <summary>
+    /// The ids a shown message can carry for this catalogue entry (MessageDefinition.Id, the entry's
+    /// first field), with the catalogue key too in case an entry's id differs from it.
+    /// </summary>
+    private static IEnumerable<string> MessageIdTexts(object messageId) =>
+        new[] { Reflect.TryGet(MessageDefinitionOf(messageId), "Id"), Reflect.TryGet(messageId, "IdInResourceBaseName") }
+            .OfType<string>()
+            .Where(s => s.Length > 0)
+            .Distinct(StringComparer.Ordinal);
 
     /// <summary>The message a dialog window shows, when it's one of Service Studio's messages (call on the UI thread).</summary>
     private static Message? MessageOf(object window)

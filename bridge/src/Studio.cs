@@ -414,6 +414,11 @@ internal static partial class Studio
             Upload = Check(UploadMembers),
             // getElementConsumers loads the producer and asks the server about one of its elements.
             ElementConsumers = Check(() => ElementConsumersMembers()),
+            // createApplication and updateApplication run Service Studio's application commands.
+            Applications = Check(() => ApplicationMembers()),
+            // createModule runs the Create Module dialog's commands; convertModule the Module › Convert ones.
+            CreateModule = Check(() => CreateModuleMembers()),
+            ConvertModule = Check(() => ConvertModuleMembers()),
         };
     }
 

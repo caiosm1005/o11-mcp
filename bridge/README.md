@@ -37,6 +37,10 @@ or a session secret.
 | `addDependency` | Adds a dependency on another module's public element to a module open in Service Studio (unsaved) |
 | `layoutFlows` | Lays out a module's logic flows on Service Studio's grid, notes wrapped and placed (one unsaved, undoable step) |
 | `uploadModules` | Uploads open modules to the environment as new versions without publishing them, as Service Studio's *Upload* does |
+| `createApplication` | Creates an empty application on the server (name, kind, description, colour, icon) |
+| `updateApplication` | Changes an application's name, description, colour or icon, or converts it to Service |
+| `createModule` | Creates a module in an application, as *Create Module* does, open and unsaved |
+| `convertModule` | Converts an open module to Service or a Library, as *Module › Convert* does, unsaved |
 
 Every result says which environment it came from: host, display name and user.
 
@@ -52,8 +56,11 @@ Service Studio is signed in to several at once, the tools ask for a `host` inste
 
 ## Safety
 
-- **Never saves or publishes.** `openModule` and `addDependency` change only what's open in
-  Service Studio, as unsaved edits; you save and publish.
+- **Never saves or publishes a module.** `openModule`, `addDependency`, `layoutFlows`,
+  `createModule` and `convertModule` change only what's open in Service Studio, as unsaved edits;
+  you save and publish. `uploadModules` adds versions without publishing them, and
+  `createApplication` and `updateApplication` change applications on the server: agents call them
+  only when you ask.
 - **No deletes or moves.** Service Studio's services can also delete and move modules and
   applications; the bridge exposes none of that.
 - **Your access, nothing more.** It acts as the user Service Studio is signed in as, so it can

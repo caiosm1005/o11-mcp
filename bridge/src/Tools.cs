@@ -21,7 +21,7 @@ internal static class Tools
     [
         new("status",
             "The bridge and Service Studio versions, each Service Studio window (its module, the environment it's signed in to, host and name, and the user), " +
-            "Capabilities: whether openModule, addDependency, layoutFlows and the dialog watch work with this Service Studio build, " +
+            "Capabilities: whether openModule, addDependency, layoutFlows, the application and module tools and the dialog watch work with this Service Studio build, " +
             "AnsweredPrompts: the reference checks the bridge cancelled and the check's messages it closed after openModule, each with what it said, and Windows: " +
             "Service Studio's open windows (title, kind, whether the bridge counts it as a dialog, the module whose tab it belongs to, a message's id and type). Call it first.",
             [],
@@ -118,6 +118,53 @@ internal static class Tools
             "Service Studio may ask something else while uploading (a newer version on the server to merge, say): the result names that dialog for the user to answer.",
             [Host, new("modules", "string", "Modules to upload, comma-separated. Empty: every module open in Service Studio on the environment.")],
             a => Studio.UploadModules(Text(a, "host"), Text(a, "modules")),
+            ReadOnly: false),
+        new("createApplication",
+            "Creates an empty application on the server, as Service Studio's application page does: name, kind, and optionally description, primary colour " +
+            "and icon. It has no modules: createModule adds them. A server change: call it only when the user asks for the application. A Service application " +
+            "gets Service Studio's default Service template; the others none, so modules created in them are built plain.",
+            [Host,
+                new("name", "string", "The application's name; no other application may have it.", Required: true),
+                new("kind", "string", "Reactive, Mobile (Phone), Traditional, Service or ReactiveLibrary. A module's kind has to fit its application's (createModule).", Required: true),
+                new("description", "string", "The application's description."),
+                new("primaryColor", "string", "The primary colour, #RRGGBB."),
+                new("icon", "string", "Absolute path to a PNG or JPEG file, up to 1 MB.")],
+            a => Studio.CreateApplication(Text(a, "host"), Required(a, "name"), Required(a, "kind"), Text(a, "description"), Text(a, "primaryColor"), Text(a, "icon")),
+            ReadOnly: false),
+        new("updateApplication",
+            "Changes an application on the server, as Service Studio's Edit Application does: its name, description, primary colour or icon, and its kind. " +
+            "Service Studio converts an application only to Service, and only once every module the server has in it is a Service module or an extension: " +
+            "convert each module (convertModule) and publish it first. A server change: call it only when the user asks. Returns the application before and after.",
+            [Host,
+                new("application", "string", "The application's current name (exact).", Required: true),
+                new("name", "string", "A new name."),
+                new("description", "string", "A new description."),
+                new("primaryColor", "string", "A new primary colour, #RRGGBB."),
+                new("icon", "string", "Absolute path to a PNG or JPEG file, up to 1 MB."),
+                new("kind", "string", "Service: converts the application to a Service application. No other kind is supported.")],
+            a => Studio.UpdateApplication(Text(a, "host"), Required(a, "application"), Text(a, "name"), Text(a, "description"), Text(a, "primaryColor"), Text(a, "icon"), Text(a, "kind")),
+            ReadOnly: false),
+        new("createModule",
+            "Creates a module in an application, as Service Studio's Create Module dialog does, and opens it in a new Service Studio tab, unsaved: it reaches the " +
+            "server once published (omlPublish, when the user asks). The application's page comes to the front while it does. A module's kind has to fit its " +
+            "application's: the application's own kind (blank, or from its template with template), a blank Service module in any application, a ReactiveLibrary " +
+            "in a Reactive, Phone or Library application. Module names are unique in the environment.",
+            [Host,
+                new("application", "string", "The application to create it in (exact name).", Required: true),
+                new("name", "string", "The module's name.", Required: true),
+                new("kind", "string", "Reactive, Mobile (Phone), Traditional, Service or ReactiveLibrary. Default: the application's kind."),
+                new("template", "boolean", "Build it from the application's template (screens, theme) instead of blank; only for the application's own kind.")],
+            a => Studio.CreateModule(Text(a, "host"), Required(a, "application"), Required(a, "name"), Text(a, "kind"), Flag(a, "template")),
+            ReadOnly: false),
+        new("convertModule",
+            "Converts a module open in Service Studio to another kind, as Module › Convert does: Traditional, Reactive or Phone to Service, or to ReactiveLibrary " +
+            "(which conversions apply comes from Service Studio). Service Studio closes the module's tab and reopens it converted, unsaved; the bridge confirms the " +
+            "conversion and answers Service Studio's \"publish now?\" with No. It refuses a module with errors, elements the target kind can't hold (listed), or an " +
+            "edit session of Service Studio's own server. Not to Reactive: Phone→Reactive also changes the application on the server and publishes.",
+            [Host,
+                new("module", "string", "The module, open in Service Studio.", Required: true),
+                new("to", "string", "Service or ReactiveLibrary.", Required: true)],
+            a => Studio.ConvertModule(Text(a, "host"), Required(a, "module"), Required(a, "to")),
             ReadOnly: false),
         new("layoutFlows",
             "Lays out the logic flows of a module open in Service Studio: every node on Service Studio's grid, and comment notes wrapped and placed. " +

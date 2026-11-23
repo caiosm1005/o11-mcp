@@ -39,10 +39,11 @@ soon as the official server covers the same thing: see [Rules for agents](#rules
    ([Offering to install](#offering-to-install-agents)) before you go on. If the user declines,
    carry on with what the installed bridge offers, and don't offer again in the same
    conversation. `status` also gives `Capabilities`: whether `openModule`, `addDependency`,
-   `layoutFlows` and the dialog watch (`DialogWatch`) work with this Service Studio build, which
-   updates itself. When one isn't `ok`, don't call it:
-   tell the user, and give the official way (ask them to open the module, or to add the
-   dependency in Manage Dependencies).
+   `layoutFlows`, the application tools (`Applications`), `createModule`, `convertModule` and the
+   dialog watch (`DialogWatch`) work with this Service Studio build, which updates itself. When one
+   isn't `ok`, don't call it: tell the user, and give the official way (ask them to open the
+   module, to add the dependency in Manage Dependencies, or to create or convert it in Service
+   Studio).
 
 ## What the bridge covers
 
@@ -67,6 +68,10 @@ and user).
 | `addDependency` | Adds a dependency on another module's public element to a module open in Service Studio, unsaved | `AddDependency` fails inside `applyModelApiCode` (upstream issue #10) |
 | `layoutFlows` | Lays out a module's logic flows on Service Studio's grid and wraps and places their notes, as one unsaved, undoable step | Layout is the agent's to do by hand, flow by flow (SKILL.md § 3.1) |
 | `uploadModules` | Uploads open modules to the environment as new versions, without publishing them, as Service Studio's Upload command does; one at a time, each with its result | Only `omlPublish`, which also compiles and deploys |
+| `createApplication` | Creates an empty application on the server: name, kind, description, primary colour, icon | No way to create an application |
+| `updateApplication` | Changes an application's name, description, primary colour or icon, or converts it to Service | No way to edit an application |
+| `createModule` | Creates a module in an application, as the Create Module dialog does, and opens it unsaved | No way to create a module |
+| `convertModule` | Converts an open module to Service or to a Library, as Module › Convert does, unsaved | No way to change a module's kind |
 
 Long lists come in pages: results say how many there are in all, and take a `limit`.
 
@@ -90,6 +95,11 @@ Requests that need the bridge, because Service Studio's own server can't answer 
 - "Lay out the flows", "tidy up this action": `layoutFlows`.
 - "Upload all open modules", "save my changes to the server without publishing":
   `uploadModules` (no `modules`: every module open on the environment).
+- "Create an application", "a new app for X": `createApplication`; "rename the app", "change its
+  icon / colour / description": `updateApplication`.
+- "Create a module", "add a service module to app A": `createModule`.
+- "Make this module a service / a library": `convertModule`; "make the app a Service
+  application": `updateApplication` with `kind: Service`, once its modules are Service modules.
 
 How the bridge fits with SKILL.md:
 
@@ -191,6 +201,36 @@ How the bridge fits with SKILL.md:
   - **No extensions.** An extension's elements fail with the reason: Find Usages in all Modules
     loads the element from its module, and an extension has no OML to load, while `getConsumers`
     lists no consumers for an extension either.
+- **Creating and editing applications.** `createApplication` and `updateApplication` change the
+  server at once, so, like `uploadModules`, call them only when the user asks for that application
+  change. `createApplication` makes an empty application (`primaryColor` `#RRGGBB`, `icon` an
+  absolute path to a PNG or JPEG) without a template: a Service application gets Service Studio's
+  default Service template, the others none. Each returns the application as the server has it.
+- **Module kinds follow the application's.** `createModule` makes the kinds Service Studio's
+  Create Module dialog offers in that application: its own kind (blank, or from its template with
+  `template: true`), a blank Service module in any application, and a ReactiveLibrary in a
+  Reactive, Phone or Library application. A Traditional module needs a Traditional application,
+  and so on: create one first. Module names are unique in the environment. The application's page
+  comes to the front, and the module opens in a new tab, unsaved: it reaches the server once
+  published (`omlPublish`, when the user asks), and closing its tab without saving loses it.
+- **Converting a module.** `convertModule` runs Service Studio's own Module › Convert command:
+  Traditional, Reactive or Phone to Service, or to ReactiveLibrary, as far as Service Studio offers
+  it for that module (a refusal lists what it does offer). It refuses a module with errors, one
+  with elements the target kind can't hold (it lists them), and one with an edit session of
+  Service Studio's own server: merge and end that first, because Service Studio closes the tab and
+  reopens the module converted. The bridge confirms the conversion and answers Service Studio's
+  "publish now?" with No (`AnsweredPrompts`); the converted module stays unsaved until published.
+  Service Studio reopens the converted module from a file, which reruns its reference check: the
+  bridge cancels it as after `openModule`. A Library can't depend on database entities, and even a
+  blank module depends on the platform's (`(System)`): remove that dependency (Manage Dependencies)
+  before converting to ReactiveLibrary, or the conversion is refused with that reason.
+  Not covered: Phone→Reactive, which also changes the application on the server and publishes
+  (Module › Convert in Service Studio), and Traditional→Reactive, which is OutSystems' separate
+  migration tool, not a Service Studio conversion.
+- **Converting an application.** Service Studio converts an application only to Service, and only
+  when every module the server has in it is a Service module or an extension. So: convert each
+  module (`convertModule`), publish it, then `updateApplication` with `kind: Service`. It refuses
+  the Others application, a system one, and one that is Service or a Library already.
 - **Comparing with an earlier version**: `getModuleVersions` then `downloadModule` with that
   version number gives you its OML file.
 
@@ -212,7 +252,7 @@ The bridge's code is in the fork's [`bridge/`](../bridge/) folder: a .NET startu
 inside Service Studio and serves MCP on `http://127.0.0.1:48720/mcp`. It needs macOS (Windows
 isn't scripted yet) and the .NET 10 SDK.
 
-**Current version: 0.7.1.** An installed bridge reports its version in `status` (`Bridge`) and
+**Current version: 0.8.0.** An installed bridge reports its version in `status` (`Bridge`) and
 in `~/Library/Application Support/ServiceStudioBridge/bin/VERSION`. An install without that file
 is older than 0.2.0.
 

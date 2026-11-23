@@ -159,8 +159,10 @@ environment Service Studio is signed in to, so it also reaches modules that aren
 `listApplications`, `listModules`, `getModuleVersions`, `downloadModule` (any version's OML
 file), `getConsumers`, `getElementConsumers`, `searchPublicElements`, `listReferenceable` and
 `getApplicationDependencies`. It also opens modules (`openModule`), adds dependencies to an open
-module (`addDependency`) and lays out a module's flows (`layoutFlows`), without saving or
-publishing, and uploads open modules as new versions without publishing them (`uploadModules`).
+module (`addDependency`), lays out a module's flows (`layoutFlows`), and creates modules or
+converts their kind (`createModule`, `convertModule`), without saving or publishing; it uploads
+open modules as new versions without publishing them (`uploadModules`), and creates and edits
+applications on the server (`createApplication`, `updateApplication`).
 It takes no session token.
 **Read [`BRIDGE.md`](BRIDGE.md) before your first bridge call.**
 
