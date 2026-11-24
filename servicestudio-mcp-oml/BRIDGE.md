@@ -347,10 +347,11 @@ rule 6 finds the installed bridge out of date:
    MCP Bridge", which adds the bridge to `DOTNET_STARTUP_HOOKS` for apps opened from then on; macOS
    shows a notice about it. It registers the bridge with your agent. The tools appear only after
    Service Studio is restarted and a new agent session starts.
-4. **Only after an explicit yes:** clone the fork into a temporary folder, run
-   `bridge/scripts/install.sh` from it, and run the registration command it prints (not when
-   updating a bridge your agent already lists). If a step fails, show the user its output and
-   stop.
+4. **Only after an explicit yes:** run `bridge/scripts/install.sh` from the checkout of the fork
+   your project already holds (a Git submodule, say), at the commit it's on, so the bridge
+   installed is the one this file describes; only without one, clone the fork into a temporary
+   folder and run it from there. Then run the registration command it prints (not when updating
+   a bridge your agent already lists). If a step fails, show the user its output and stop.
 5. **Hand over:** ask the user to quit and reopen Service Studio and to start a new session.
    Don't restart Service Studio yourself.
 6. **Declined?** Carry on without the bridge (or with the installed one, for an update), and
