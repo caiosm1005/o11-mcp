@@ -46,16 +46,26 @@ internal static class Tools
             a => Studio.GetConsumers(Text(a, "host"), Required(a, "module"), Number(a, "limit"))),
         new("getElementConsumers",
             "The modules that reference one public element (an action, entity, structure, block…), sorted by name, each with its application: the list " +
-            "Service Studio's Find Usages in all Modules starts from, as the server has it from the consumers' published versions. It lists modules, not " +
-            "where in them the element is used. The element is found by its exact name across the environment; when several producers expose that name, " +
-            "it lists them instead: pass the producer (and kind). The bridge reads the producer as open in Service Studio, or loads its published version " +
-            "in memory (nothing is written). An extension's elements aren't covered.",
+            "Service Studio's Find Usages in all Modules starts from, as the server has it from the consumers' published versions. By default it lists " +
+            "modules, not where in them the element is used, and is quick. countUsages: true goes on as Find Usages in all Modules does: it loads each " +
+            "consumer (as open in Service Studio, or its published version in memory; nothing is written) and adds how many places in it use the element; " +
+            "it takes a few seconds per consumer, and a search still running after about 45 s returns Status Searching with a job id instead: call again " +
+            "with just job to collect the result. part does the same for a part of the element: an entity's static record, attribute or entity action, a " +
+            "structure's attribute, or a role's action. The server knows consumers of top-level elements only, so the element's consumers are searched " +
+            "for the part. With counts, the consumers that use it come first, then those with Usages 0 (Using says how many do). The element is found by its exact name across the environment; when several producers expose " +
+            "that name, it lists them instead: pass the producer (and kind). An extension's elements aren't covered.",
             [Host,
-                new("element", "string", "The public element's exact name.", Required: true),
+                new("element", "string", "The public element's exact name: for a static record, an attribute or an entity action, its entity. Required unless job is given."),
                 new("producer", "string", "The module that exposes it (exact name), when several do."),
                 new("kind", "string", "The element's kind, as searchPublicElements reports it (Action, Entity, Structure, WebBlock…), when one name has several kinds."),
+                new("part", "string", "A part of the element to find usages of instead: a static record's identifier, an attribute's name, or an entity or role action " +
+                    "(CreateOrUpdate or CreateOrUpdateCustomer, CheckManagerRole). Counts usages in each of the element's consumers."),
+                new("partKind", "string", "Record, Attribute or Action, when the part's name is ambiguous (a record and an attribute with one name)."),
+                new("countUsages", "boolean", "Search each consumer and count its usages of the element (slower: it loads every consumer). Implied by part."),
+                new("job", "string", "The job id a search still running returned (Status Searching): collects its result, or its progress. Pass nothing else."),
                 Limit],
-            a => Studio.GetElementConsumers(Text(a, "host"), Required(a, "element"), Text(a, "producer"), Text(a, "kind"), Number(a, "limit"))),
+            a => Studio.GetElementConsumers(Text(a, "host"), Text(a, "element"), Text(a, "producer"), Text(a, "kind"), Text(a, "part"), Text(a, "partKind"),
+                OptionalFlag(a, "countUsages"), Text(a, "job"), Number(a, "limit"))),
         new("searchPublicElements",
             "Searches the public elements that modules in the environment expose, as Manage Dependencies lists them: name, kind and producer module. " +
             "The platform's own elements (ListAppend, Site_Property, User…) come under (System), as in Manage Dependencies.",
@@ -271,6 +281,9 @@ internal static class Tools
 
     private static bool RequiredFlag(JsonObject args, string name) =>
         args[name] == null ? throw new ArgumentException($"{name} is required.") : Flag(args, name);
+
+    /// <summary>A flag that may be left out: null then, so a tool can tell an explicit false from nothing.</summary>
+    private static bool? OptionalFlag(JsonObject args, string name) => args[name] == null ? null : Flag(args, name);
 
     private static bool Flag(JsonObject args, string name) => args[name] switch
     {

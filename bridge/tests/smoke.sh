@@ -153,6 +153,21 @@ check "getElementConsumers needs the element" yes "$(printf '%s' "$out" | grep -
 out=$(rpc '{"jsonrpc":"2.0","id":19,"method":"tools/call","params":{"name":"getElementConsumers","arguments":{"element":"Y"}}}')
 check "getElementConsumers fails cleanly outside Service Studio" yes "$(printf '%s' "$out" | grep -q '"isError":true' && echo yes || echo no)"
 
+out=$(rpc '{"jsonrpc":"2.0","id":60,"method":"tools/call","params":{"name":"getElementConsumers","arguments":{"element":"Y","part":"Z","partKind":"Widget"}}}')
+check "getElementConsumers refuses an unknown partKind" yes "$(printf '%s' "$out" | grep -q 'partKind is Record, Attribute or Action' && echo yes || echo no)"
+
+out=$(rpc '{"jsonrpc":"2.0","id":61,"method":"tools/call","params":{"name":"getElementConsumers","arguments":{"element":"Y","partKind":"Record"}}}')
+check "getElementConsumers partKind needs a part" yes "$(printf '%s' "$out" | grep -q 'partKind needs a part' && echo yes || echo no)"
+
+out=$(rpc '{"jsonrpc":"2.0","id":62,"method":"tools/call","params":{"name":"getElementConsumers","arguments":{"element":"Y","part":"Z","countUsages":false}}}')
+check "getElementConsumers part always counts usages" yes "$(printf '%s' "$out" | grep -q 'part always counts usages' && echo yes || echo no)"
+
+out=$(rpc '{"jsonrpc":"2.0","id":63,"method":"tools/call","params":{"name":"getElementConsumers","arguments":{"element":"Y","countUsages":"maybe"}}}')
+check "getElementConsumers countUsages is a flag" yes "$(printf '%s' "$out" | grep -q 'countUsages must be true or false' && echo yes || echo no)"
+
+out=$(rpc '{"jsonrpc":"2.0","id":64,"method":"tools/call","params":{"name":"getElementConsumers","arguments":{"job":"nosuchjob"}}}')
+check "getElementConsumers reports an unknown job" yes "$(printf '%s' "$out" | grep -q 'No search job nosuchjob' && echo yes || echo no)"
+
 out=$(rpc '{"jsonrpc":"2.0","id":20,"method":"tools/call","params":{"name":"createApplication","arguments":{"name":"X"}}}')
 check "createApplication needs the kind" yes "$(printf '%s' "$out" | grep -q 'kind is required' && echo yes || echo no)"
 

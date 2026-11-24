@@ -46,7 +46,7 @@ This fork adds a second MCP server, the **Service Studio MCP Bridge**, for thing
 | See a module's version history: who uploaded what, when, and which version is published | — | `getModuleVersions` |
 | Download a module's OML file: the published version, the latest upload or any past version | — | `downloadModule` |
 | Find the modules that use a module | — | `getConsumers` |
-| Find the modules that use one action, entity, structure or block | — (*Find Usages in all Modules* in Service Studio) | `getElementConsumers` |
+| Find the modules that use one action, entity, structure or block, or a static record, attribute or entity action, and how often | — (*Find Usages in all Modules* in Service Studio) | `getElementConsumers` |
 | Search the public elements other modules expose | Only the open module's references | `searchPublicElements` |
 | See which producers a module can reference | — | `listReferenceable` |
 | See an application's dependencies on other applications | — | `getApplicationDependencies` |

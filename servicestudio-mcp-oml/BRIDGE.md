@@ -40,10 +40,11 @@ soon as the official server covers the same thing: see [Rules for agents](#rules
    carry on with what the installed bridge offers, and don't offer again in the same
    conversation. `status` also gives `Capabilities`: whether `openModule`, `addDependency`,
    `layoutFlows`, the application tools (`Applications`), `createModule`, `convertModule`,
-   `setReferenceTenantIdentifier` (`ReferenceTenantIdentifier`) and the dialog watch (`DialogWatch`) work with this Service Studio build, which updates itself. When one
+   `setReferenceTenantIdentifier` (`ReferenceTenantIdentifier`), `getElementConsumers`'
+   usage counts and parts (`UsageCount`) and the dialog watch (`DialogWatch`) work with this Service Studio build, which updates itself. When one
    isn't `ok`, don't call it: tell the user, and give the official way (ask them to open the
-   module, to add the dependency in Manage Dependencies, or to create or convert it in Service
-   Studio).
+   module, to add the dependency in Manage Dependencies, to create or convert it in Service
+   Studio, or to run Find Usages in all Modules there).
 
 ## What the bridge covers
 
@@ -60,7 +61,7 @@ and user).
 | `getModuleVersions` | A module's version history: number, uploader, date, comment, which one is published | No version history |
 | `downloadModule` | A module's OML file: the published version, the latest upload or any version number | No download of an OML file, let alone of a past version |
 | `getConsumers` | The modules that reference a module, by name, each with its application | No way to find consumers (upstream issue #3) |
-| `getElementConsumers` | The modules that reference one public element (an action, entity, structure, block…), by name, each with its application: the list Service Studio's Find Usages in all Modules starts from | No Find Usages in all Modules |
+| `getElementConsumers` | The modules that reference one public element (an action, entity, structure, block…), by name, each with its application: the list Service Studio's Find Usages in all Modules starts from. On request, each one's usage count, also of a static record, an attribute or an entity or role action | No Find Usages in all Modules |
 | `searchPublicElements` | Public elements across the environment, by name, kind and producer module | Only the open module's references are visible |
 | `listReferenceable` | The producers a module can reference, with signature hashes | No equivalent of Manage Dependencies' list |
 | `getApplicationDependencies` | An application's dependencies on other applications | No application-level view |
@@ -85,7 +86,9 @@ Requests that need the bridge, because Service Studio's own server can't answer 
   `downloadModule`.
 - "Which modules use module X?": `getConsumers`.
 - "Which modules use action (entity, structure, block…) X?", "who calls X?", "what breaks if I change X's
-  signature?": `getElementConsumers`.
+  signature?": `getElementConsumers`; "…and how much?": with `countUsages`.
+- "Which modules use static record (attribute, entity action) X?", "can I delete record X?":
+  `getElementConsumers` with the entity as `element` and X as `part`.
 - "Is there a public action, entity or block for Y I can reuse?": `searchPublicElements`.
 - "What can this module reference?": `listReferenceable`.
 - "What does application A depend on?": `getApplicationDependencies`.
@@ -186,21 +189,46 @@ How the bridge fits with SKILL.md:
   modules that reference that element. `getConsumers` answers for the whole module, any element.
   When several producers expose the name, it lists them instead: ask the user which one, then call
   it again with `producer` (and `kind`). `searchPublicElements` finds names by part.
-  - **Modules, not usages.** It doesn't say where or how often a consumer uses the element. When
-    that matters, open the consumer (`openModule`) and read it with Service Studio's own server.
-  - **What the server knows.** The list is the server's, from the consumers' published versions: a
+  - **Modules, by default.** Without `countUsages` or `part` it lists modules, not where or how
+    often they use the element, and answers in a few seconds.
+  - **What the server knows.** That list is the server's, from the consumers' published versions: a
     module open in Service Studio with unpublished changes to its references can be missing from
-    it, or listed when it no longer uses the element. Service Studio's Find Usages in all Modules
-    corrects the list for the modules it has open; to do the same, read an open consumer's
-    references (`runQuery` `Root { References { Name ServerActions { Name } } }`).
-  - **Top-level elements only.** The server tracks the action, entity, structure or block, not its
-    parts: for an attribute, a static record or an entity action, ask about its entity or structure.
-    Every module that references the entity is listed, whether it uses that attribute or not, as in
-    Service Studio.
+    it, or listed when it no longer uses the element.
+  - **Usage counts.** `countUsages: true` goes on as Find Usages in all Modules does: it loads each
+    consumer (as open in Service Studio, unsaved changes included, or else its published version in
+    memory, nothing written), finds its reference to the element and counts the places that use it
+    (`Usages`: what Find Usages lists, each mention in an expression apart, and a call along with
+    what reads its result; a reference entity's own Identifier, Label, Order By and indexes aren't
+    counted for an attribute, though Find Usages lists them).
+    Modules open in Service Studio that reference the element although the server doesn't list them
+    are searched too (`AddedFromOpenTabs`). The consumers that use it come first (`Using` says how
+    many), then those with `Usages: 0`: a module that references the element but doesn't use it (an
+    unused dependency), or one whose reference is out of date. It takes a few
+    seconds per consumer, so use it when the count or the unused references matter, not to list
+    consumers. A consumer that couldn't be loaded is under `Unchecked`, with the reason: whether it
+    uses the element is unknown.
+  - **Long searches.** The search runs in the background, one at a time, and other bridge calls
+    go on meanwhile. A call returns the result if the search ends within about 45 s; otherwise it
+    returns `Status: Searching` with `Searched`, `Of` and a `Job` id. Call `getElementConsumers`
+    again with only `job` until the result comes back: each call waits up to 45 s, so it stays
+    under the MCP client's timeout. Asking for the same search again while it runs joins it. A
+    finished job stays available for 10 minutes; a search stops after 20 minutes, and what it
+    didn't reach is under `Unchecked`.
+  - **Parts of an element.** The server tracks the action, entity, structure, block or role, not
+    its parts. For an entity's static record, attribute or entity action (`CreateOrUpdate` or
+    `CreateOrUpdate<Entity>`; only `Get` when the entity is exposed read-only), a structure's
+    attribute, or a role's action (`Check<Role>Role`…), name the entity, structure or role as
+    `element` and the part as `part` (`partKind` `Record`, `Attribute` or `Action` when a record and
+    an attribute share the name). The bridge searches every consumer of the element, as with
+    `countUsages`, and counts the part in each: `Usages: 0` is one that uses the element but not
+    the part, listed after those that do. That's the answer before deleting or renaming a record or
+    an attribute: `Using: 0`, with nothing under `Unchecked`, means no published consumer or open
+    module uses it.
   - **Where it reads the element.** The server takes the element itself, not its name, so the bridge
     reads it from the producer as open in Service Studio, or else loads the producer's published
     version in memory (no file written). For a large producer that isn't open, that takes several
-    seconds; the result's `ReadFrom` says which it used.
+    seconds; the result's `ReadFrom` says which it used. A part not published yet is found only in
+    the producer as open.
   - **No extensions.** An extension's elements fail with the reason: Find Usages in all Modules
     loads the element from its module, and an extension has no OML to load, while `getConsumers`
     lists no consumers for an extension either.
@@ -264,7 +292,7 @@ The bridge's code is in the fork's [`bridge/`](../bridge/) folder: a .NET startu
 inside Service Studio and serves MCP on `http://127.0.0.1:48720/mcp`. It needs macOS (Windows
 isn't scripted yet) and the .NET 10 SDK.
 
-**Current version: 0.9.0.** An installed bridge reports its version in `status` (`Bridge`) and
+**Current version: 0.10.0.** An installed bridge reports its version in `status` (`Bridge`) and
 in `~/Library/Application Support/ServiceStudioBridge/bin/VERSION`. An install without that file
 is older than 0.2.0.
 
