@@ -92,14 +92,15 @@ check "initialize echoes a supported protocol" '"2025-06-18"' "$(printf '%s' "$o
 check "initialize names the server" yes "$(printf '%s' "$out" | grep -q '"name":"servicestudio-bridge"' && echo yes || echo no)"
 
 out=$(rpc '{"jsonrpc":"2.0","id":2,"method":"tools/list"}')
-check "tools/list has 19 tools" 19 "$(printf '%s' "$out" | grep -o '"inputSchema"' | wc -l | tr -d ' ')"
-for t in status listApplications listModules getModuleVersions getConsumers getElementConsumers searchPublicElements getApplicationDependencies listReferenceable downloadModule openModule addDependency uploadModules layoutFlows createApplication updateApplication createModule convertModule setReferenceTenantIdentifier; do
+check "tools/list has 21 tools" 21 "$(printf '%s' "$out" | grep -o '"inputSchema"' | wc -l | tr -d ' ')"
+for t in status listApplications listModules getModuleVersions getConsumers getElementConsumers searchPublicElements getApplicationDependencies listReferenceable downloadModule openModule addDependency uploadModules layoutFlows createApplication updateApplication createModule cloneModule moveModule convertModule setReferenceTenantIdentifier; do
   check "tool $t listed" yes "$(printf '%s' "$out" | grep -q "\"name\":\"$t\"" && echo yes || echo no)"
 done
-# downloadModule writes a file; openModule, addDependency, layoutFlows, createModule and convertModule change what's
-# open in Service Studio, as does setReferenceTenantIdentifier; uploadModules adds versions on the server; createApplication and
-# updateApplication change applications.
-check "ten tools aren't read-only" 10 "$(printf '%s' "$out" | grep -o '"readOnlyHint":false' | wc -l | tr -d ' ')"
+# downloadModule writes a file; openModule, addDependency, layoutFlows, createModule, cloneModule and convertModule change
+# what's open in Service Studio, as does setReferenceTenantIdentifier; uploadModules adds versions on the server; createApplication,
+# updateApplication and moveModule change applications.
+check "twelve tools aren't read-only" 12 "$(printf '%s' "$out" | grep -o '"readOnlyHint":false' | wc -l | tr -d ' ')"
+check "open-module tools take a tabId, key or name" 7 "$(printf '%s' "$out" | grep -o "tabId, key or name" | wc -l | tr -d ' ')"
 
 out=$(rpc '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"status","arguments":{}}}')
 check "status succeeds outside Service Studio" yes "$(printf '%s' "$out" | grep -q '"isError":false' && echo yes || echo no)"
@@ -188,6 +189,18 @@ check "updateApplication converts an application only to Service" yes "$(printf 
 
 out=$(rpc '{"jsonrpc":"2.0","id":26,"method":"tools/call","params":{"name":"createModule","arguments":{"application":"X"}}}')
 check "createModule needs the name" yes "$(printf '%s' "$out" | grep -q 'name is required' && echo yes || echo no)"
+
+out=$(rpc '{"jsonrpc":"2.0","id":65,"method":"tools/call","params":{"name":"cloneModule","arguments":{"module":"X"}}}')
+check "cloneModule needs the name" yes "$(printf '%s' "$out" | grep -q 'name is required' && echo yes || echo no)"
+
+out=$(rpc '{"jsonrpc":"2.0","id":66,"method":"tools/call","params":{"name":"cloneModule","arguments":{"module":"X","name":"Y"}}}')
+check "cloneModule fails cleanly outside Service Studio" yes "$(printf '%s' "$out" | grep -q '"isError":true' && echo yes || echo no)"
+
+out=$(rpc '{"jsonrpc":"2.0","id":67,"method":"tools/call","params":{"name":"moveModule","arguments":{"module":"X"}}}')
+check "moveModule needs the application" yes "$(printf '%s' "$out" | grep -q 'application is required' && echo yes || echo no)"
+
+out=$(rpc '{"jsonrpc":"2.0","id":68,"method":"tools/call","params":{"name":"moveModule","arguments":{"module":"X","application":"Y"}}}')
+check "moveModule fails cleanly outside Service Studio" yes "$(printf '%s' "$out" | grep -q '"isError":true' && echo yes || echo no)"
 
 out=$(rpc '{"jsonrpc":"2.0","id":27,"method":"tools/call","params":{"name":"convertModule","arguments":{"module":"X","to":"Reactive"}}}')
 check "convertModule doesn't convert to Reactive" yes "$(printf '%s' "$out" | grep -q "convert to Reactive" && echo yes || echo no)"

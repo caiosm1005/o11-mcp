@@ -39,7 +39,7 @@ soon as the official server covers the same thing: see [Rules for agents](#rules
    ([Offering to install](#offering-to-install-agents)) before you go on. If the user declines,
    carry on with what the installed bridge offers, and don't offer again in the same
    conversation. `status` also gives `Capabilities`: whether `openModule`, `addDependency`,
-   `layoutFlows`, the application tools (`Applications`), `createModule`, `convertModule`,
+   `layoutFlows`, the application tools (`Applications`), `createModule`, `cloneModule`, `moveModule`, `convertModule`,
    `setReferenceTenantIdentifier` (`ReferenceTenantIdentifier`), `getElementConsumers`'
    usage counts and parts (`UsageCount`) and the dialog watch (`DialogWatch`) work with this Service Studio build, which updates itself. When one
    isn't `ok`, don't call it: tell the user, and give the official way (ask them to open the
@@ -72,6 +72,8 @@ and user).
 | `createApplication` | Creates an empty application on the server: name, kind, description, primary colour, icon | No way to create an application |
 | `updateApplication` | Changes an application's name, description, primary colour or icon, or converts it to Service | No way to edit an application |
 | `createModule` | Creates a module in an application, as the Create Module dialog does, and opens it unsaved | No way to create a module |
+| `cloneModule` | Clones a module, open or published, as Module › Clone does: a new module, named as asked, open and unsaved | No way to clone a module |
+| `moveModule` | Moves a module into another application on the server, as the application page's Move does | No way to move a module between applications |
 | `convertModule` | Converts an open module to Service or to a Library, as Module › Convert does, unsaved | No way to change a module's kind |
 | `setReferenceTenantIdentifier` | Sets Show Tenant Identifier on an open module's reference to a multi-tenant entity, unsaved | The Model API only reads it on a reference |
 
@@ -102,6 +104,9 @@ Requests that need the bridge, because Service Studio's own server can't answer 
 - "Create an application", "a new app for X": `createApplication`; "rename the app", "change its
   icon / colour / description": `updateApplication`.
 - "Create a module", "add a service module to app A": `createModule`.
+- "Clone module X as Y", "copy X into a new module": `cloneModule`.
+- "Move module X to app A", "it's in the wrong application", "it landed in Independent Modules":
+  `moveModule`.
 - "Make this module a service / a library": `convertModule`; "make the app a Service
   application": `updateApplication` with `kind: Service`, once its modules are Service modules.
 - "Show the tenant identifier on the referenced entity X", "read every tenant's records of X":
@@ -109,6 +114,14 @@ Requests that need the bridge, because Service Studio's own server can't answer 
 
 How the bridge fits with SKILL.md:
 
+- **Naming an open module.** Where a bridge tool acts on a module open in Service Studio
+  (`addDependency`, `layoutFlows`, `uploadModules`, `cloneModule`'s source, `moveModule`,
+  `convertModule`, `setReferenceTenantIdentifier`), `module` takes what Service Studio's own tools take as
+  `eSpaceName`: the `tabId` from `listOpenModules`, the module's `key` (with or without dashes) or
+  its name. So pass the same value to both servers. A tabId or key names that tab exactly, and it
+  also picks the environment when `host` is left out. A name or key that several open tabs match
+  (two environments, two versions of one module) is refused with each candidate's tabId: pass
+  the one you mean. A tabId stops matching once its tab closes or holds another module.
 - **Module not open (§ 0.1)?** When the server has no `searchApps` or `openModule`, use
   `listModules` (with `filter` or `application`) to confirm the module's exact name, then open it
   with the bridge's `openModule`, only when the user's request names it. Like Open from
@@ -244,6 +257,30 @@ How the bridge fits with SKILL.md:
   and so on: create one first. Module names are unique in the environment. The application's page
   comes to the front, and the module opens in a new tab, unsaved: it reaches the server once
   published (`omlPublish`, when the user asks), and closing its tab without saving loses it.
+- **Cloning a module.** `cloneModule` runs what Service Studio's Module › Clone runs, without its
+  file dialog, then gives the clone the name asked for (an undoable rename, as its properties do)
+  and the application it publishes into: the one given, or the source's, which has to take the
+  module's kind (above). The clone has a new module key and opens in a new tab, unsaved: nothing
+  reaches the server until it's published (`omlPublish`, when the user asks), which creates it as
+  a new module, with its own, empty tables for its entities. So change what the clone shouldn't
+  keep (its entities, say) before its first publish. The source is the module open in Service
+  Studio, as its tab has it, unsaved changes included but not what an edit session of Service
+  Studio's own server holds unmerged (a warning says so); else its published version, loaded
+  without opening it. Service Studio clones from a module's tab, so with no module open in the
+  window, open one first. Closing the clone's tab without saving loses it, and a copy saved to a file
+  and reopened no longer knows its application. Service Studio's "Module cloned" message is
+  closed for you.
+- **Moving a module to another application.** `moveModule` does what the module's Move on Service
+  Studio's application page does: a server change, at once, so call it only when the user asks
+  for that move (a module in the wrong application, say). The module itself doesn't change and
+  nothing is published. It refuses what Service Studio refuses or asks about: a system application
+  on either side, Independent Modules as the target, a target that can't take the module's kind
+  (an extension or Service module goes anywhere, a Library in a Reactive, Phone or Library
+  application, any other module in one of its own kind), and an application's last module, whose
+  move would delete the application: that one is the user's to do in Service Studio. It returns
+  the application before and after, as the server lists it. A tab holding the module publishes it
+  into the new application from then on. A module open but never published isn't on the server:
+  for it only the application its first publish creates it in changes (`retargeted`).
 - **Converting a module.** `convertModule` runs Service Studio's own Module › Convert command:
   Traditional, Reactive or Phone to Service, or to ReactiveLibrary, as far as Service Studio offers
   it for that module (a refusal lists what it does offer). It refuses a module with errors, one
@@ -292,7 +329,7 @@ The bridge's code is in the fork's [`bridge/`](../bridge/) folder: a .NET startu
 inside Service Studio and serves MCP on `http://127.0.0.1:48720/mcp`. It needs macOS (Windows
 isn't scripted yet) and the .NET 10 SDK.
 
-**Current version: 0.10.0.** An installed bridge reports its version in `status` (`Bridge`) and
+**Current version: 0.11.0.** An installed bridge reports its version in `status` (`Bridge`) and
 in `~/Library/Application Support/ServiceStudioBridge/bin/VERSION`. An install without that file
 is older than 0.2.0.
 

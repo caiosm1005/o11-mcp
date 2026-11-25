@@ -13,6 +13,9 @@ internal static class Tools
 
     private static readonly Parameter Module = new("module", "string", "The module's name.", Required: true);
 
+    /// <summary>What a tool acting on an open module says of the module, as Service Studio's own server says of eSpaceName.</summary>
+    private const string OpenModuleForms = "its tabId, key or name, as Service Studio's listOpenModules gives them; when several open tabs match a name or key, pass the tabId.";
+
     private static readonly Parameter Limit = new("limit", "integer", "How many items to return at most (default 200, up to 2000). Results say the total and whether some were left out.");
 
     private static readonly Parameter Details = new("details", "boolean", "Also return descriptions and keys (longer results).");
@@ -113,7 +116,7 @@ internal static class Tools
             "came in only as a parameter's or attribute's type, isn't a reference: it gets ticked), and one the module can't use " +
             "(a client action in a Service module, for one) fails instead of reporting success.",
             [Host,
-                new("module", "string", "The module open in Service Studio that gets the dependency.", Required: true),
+                new("module", "string", "The module open in Service Studio that gets the dependency: " + OpenModuleForms, Required: true),
                 new("element", "string", "The public element's exact name.", Required: true),
                 new("producer", "string", "The producer module that exposes it (exact name; (System) for the platform's own elements), when several do."),
                 new("kind", "string", "The element's kind, as searchPublicElements reports it (Action, Entity, Structure, WebBlock…), when one name has several kinds.")],
@@ -126,7 +129,7 @@ internal static class Tools
             "It uploads the module as open in Service Studio: changes an edit session of Service Studio's own server hasn't merged aren't in it (the result warns). " +
             "When the server already has a module's version, Service Studio says Upload Skipped: the bridge closes that message and reports the module unchanged. " +
             "Service Studio may ask something else while uploading (a newer version on the server to merge, say): the result names that dialog for the user to answer.",
-            [Host, new("modules", "string", "Modules to upload, comma-separated. Empty: every module open in Service Studio on the environment.")],
+            [Host, new("modules", "string", "Modules to upload, comma-separated, each by " + OpenModuleForms + " Empty: every module open in Service Studio on the environment.")],
             a => Studio.UploadModules(Text(a, "host"), Text(a, "modules")),
             ReadOnly: false),
         new("createApplication",
@@ -166,13 +169,35 @@ internal static class Tools
                 new("template", "boolean", "Build it from the application's template (screens, theme) instead of blank; only for the application's own kind.")],
             a => Studio.CreateModule(Text(a, "host"), Required(a, "application"), Required(a, "name"), Text(a, "kind"), Flag(a, "template")),
             ReadOnly: false),
+        new("cloneModule",
+            "Clones a module as Service Studio's Module › Clone does: a copy with a new module key, under the name given, opened in a new Service Studio tab, " +
+            "unsaved. Nothing reaches the server: it's created there once published (omlPublish, when the user asks), with its own tables for its entities. " +
+            "The source is the module open in Service Studio, as its tab has it, or else its published version. The clone publishes into the application " +
+            "given, or the source's; a module's kind has to fit its application's (createModule). Module names are unique in the environment.",
+            [Host,
+                new("module", "string", "The module to clone: open in Service Studio (" + OpenModuleForms.TrimEnd('.') + "), or else published (its name or key).", Required: true),
+                new("name", "string", "The clone's name.", Required: true),
+                new("application", "string", "The application the clone publishes into (exact name). Default: the source's.")],
+            a => Studio.CloneModule(Text(a, "host"), Required(a, "module"), Required(a, "name"), Text(a, "application")),
+            ReadOnly: false),
+        new("moveModule",
+            "Moves a module into another application, as the module's Move on Service Studio's application page does: a server change, at once (the module " +
+            "itself doesn't change, and nothing is published). Call it only when the user asks for that move. Service Studio's limits apply: not into Independent " +
+            "Modules or a system application, nor out of a system application; an extension or Service module goes in any application, a Library in a Reactive, " +
+            "Phone or Library one, any other module in one of its own kind; and not an application's last module, whose move would delete the application. A module " +
+            "open but never published isn't on the server: for it, only the application its first publish creates it in changes. Returns the application before and after.",
+            [Host,
+                new("module", "string", "The module to move: open in Service Studio (" + OpenModuleForms.TrimEnd('.') + "), or else on the server (its name or key).", Required: true),
+                new("application", "string", "The application to move it into (exact name).", Required: true)],
+            a => Studio.MoveModule(Text(a, "host"), Required(a, "module"), Required(a, "application")),
+            ReadOnly: false),
         new("convertModule",
             "Converts a module open in Service Studio to another kind, as Module › Convert does: Traditional, Reactive or Phone to Service, or to ReactiveLibrary " +
             "(which conversions apply comes from Service Studio). Service Studio closes the module's tab and reopens it converted, unsaved; the bridge confirms the " +
             "conversion and answers Service Studio's \"publish now?\" with No. It refuses a module with errors, elements the target kind can't hold (listed), or an " +
             "edit session of Service Studio's own server. Not to Reactive: Phone→Reactive also changes the application on the server and publishes.",
             [Host,
-                new("module", "string", "The module, open in Service Studio.", Required: true),
+                new("module", "string", "The module open in Service Studio: " + OpenModuleForms, Required: true),
                 new("to", "string", "Service or ReactiveLibrary.", Required: true)],
             a => Studio.ConvertModule(Text(a, "host"), Required(a, "module"), Required(a, "to")),
             ReadOnly: false),
@@ -182,7 +207,7 @@ internal static class Tools
             "unsaved, undoable change; nothing is saved or published. It refuses while Service Studio's own server has an edit session or unmerged changes " +
             "on the module, whose next omlMerge would put the old value back: set it before startOmlEditSession. Returns the value before and after.",
             [Host,
-                new("module", "string", "The module open in Service Studio that holds the reference.", Required: true),
+                new("module", "string", "The module open in Service Studio that holds the reference: " + OpenModuleForms, Required: true),
                 new("producer", "string", "The referenced module, as the module's dependencies name it.", Required: true),
                 new("entity", "string", "The referenced entity's name.", Required: true),
                 new("value", "boolean", "true to show the tenant identifier, false to hide it.", Required: true)],
@@ -194,7 +219,7 @@ internal static class Tools
             "It rearranges flows a developer drew too, unless flows names some. It refuses while Service Studio's own server has an edit session " +
             "or unmerged changes on the module, whose next omlMerge would put the old positions back: run it after the session's last merge and " +
             "endOmlEditSession. dryRun says what would move and changes nothing.",
-            [Host, Module,
+            [Host, new("module", "string", "The module open in Service Studio: " + OpenModuleForms, Required: true),
                 new("flows", "string", "Flows to lay out, by path or name, comma-separated (\"/Customer_CreateOrUpdate\" or \"Customer_CreateOrUpdate\"). Empty: every logic flow."),
                 new("dryRun", "boolean", "Say what would move and change nothing.")],
             a => Studio.LayoutFlows(Text(a, "host"), Required(a, "module"), Text(a, "flows"), Flag(a, "dryRun")),

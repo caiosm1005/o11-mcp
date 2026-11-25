@@ -40,6 +40,8 @@ or a session secret.
 | `createApplication` | Creates an empty application on the server (name, kind, description, colour, icon) |
 | `updateApplication` | Changes an application's name, description, colour or icon, or converts it to Service |
 | `createModule` | Creates a module in an application, as *Create Module* does, open and unsaved |
+| `cloneModule` | Clones a module, open or published, as *Module › Clone* does, under a new name, open and unsaved |
+| `moveModule` | Moves a module into another application on the server, as the application page's *Move* does |
 | `convertModule` | Converts an open module to Service or a Library, as *Module › Convert* does, unsaved |
 | `setReferenceTenantIdentifier` | Sets *Show Tenant Identifier* on an open module's reference to a multi-tenant entity (unsaved) |
 
@@ -58,13 +60,14 @@ Service Studio is signed in to several at once, the tools ask for a `host` inste
 ## Safety
 
 - **Never saves or publishes a module.** `openModule`, `addDependency`, `layoutFlows`,
-  `createModule`, `convertModule` and `setReferenceTenantIdentifier` change only what's open in
+  `createModule`, `cloneModule`, `convertModule` and `setReferenceTenantIdentifier` change only what's open in
   Service Studio, as unsaved edits;
   you save and publish. `uploadModules` adds versions without publishing them, and
-  `createApplication` and `updateApplication` change applications on the server: agents call them
-  only when you ask.
-- **No deletes or moves.** Service Studio's services can also delete and move modules and
-  applications; the bridge exposes none of that.
+  `createApplication`, `updateApplication` and `moveModule` change applications on the server:
+  agents call them only when you ask.
+- **No deletes.** Service Studio's services can also delete modules and applications; the bridge
+  exposes none of that. `moveModule` refuses to move an application's last module, which would
+  delete the application.
 - **Your access, nothing more.** It acts as the user Service Studio is signed in as, so it can
   do only what that user can.
 - **Local and authenticated.** It listens on 127.0.0.1 only. It requires a bearer token kept in

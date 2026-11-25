@@ -418,8 +418,11 @@ internal static partial class Studio
             UsageCount = Check(() => UsageMembers()),
             // createApplication and updateApplication run Service Studio's application commands.
             Applications = Check(() => ApplicationMembers()),
-            // createModule runs the Create Module dialog's commands; convertModule the Module › Convert ones.
+            // createModule runs the Create Module dialog's commands; cloneModule what Module › Clone runs; convertModule the Module › Convert ones.
             CreateModule = Check(() => CreateModuleMembers()),
+            CloneModule = Check(() => CloneModuleMembers()),
+            // moveModule makes the server call the application page's Move makes.
+            MoveModule = Check(() => MoveModuleMembers()),
             ConvertModule = Check(() => ConvertModuleMembers()),
             // setReferenceTenantIdentifier sets a property of Service Studio's own model object for a referenced entity.
             ReferenceTenantIdentifier = Check(() => ReferenceEntityMembers()),
@@ -433,9 +436,13 @@ internal static partial class Studio
     /// </summary>
     public static object AddDependency(string? host, string module, string element, string? producer, string? kind)
     {
-        var connection = Pick(host);
-        var tab = OpenTab(connection, module)
-            ?? throw new BridgeException($"{module} isn't open in Service Studio (signed in to {connection.Host}). Open it first.");
+        var (connection, tab, name) = ResolveOpenModule(host, module);
+        if (tab == null)
+        {
+            throw NotOpen(module, connection);
+        }
+
+        module = name;
         var eSpace = Reflect.Get(tab, "OwnerESpace") ?? throw new BridgeException($"Service Studio's tab for {module} has no module loaded yet.");
         var moduleKey = KeyId(Reflect.TryGet(eSpace, "Key"));
 
@@ -750,6 +757,78 @@ internal static partial class Studio
                 Reflect.TryGet(Reflect.TryGet(Reflect.TryGet(Reflect.TryGet(a, "ServerCommunicationsProvider"), "LoginInfo"), "HostInfo"), "HostName") as string,
                 connection.Host,
                 StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>The host a tab's window is signed in to.</summary>
+    private static string? TabHost(object tab) =>
+        Reflect.TryGet(Reflect.TryGet(Reflect.TryGet(Reflect.TryGet(tab, "ServerCommunicationsProvider"), "LoginInfo"), "HostInfo"), "HostName") as string;
+
+    /// <summary>A module key (ObjectKey) as a Guid (AsGuid), the form Service Studio's own server compares keys in.</summary>
+    private static Guid? KeyGuid(object? key) =>
+        Reflect.TryGet(key, "AsGuid") as Guid? ?? (Guid.TryParse(key?.ToString(), out var parsed) ? parsed : null);
+
+    private static Guid? ModuleGuid(object? eSpace) => KeyGuid(Reflect.TryGet(eSpace, "Key"));
+
+    /// <summary>A tab's id as Service Studio's own server's listOpenModules gives it: the tab (aggregator) id, then the module's key, 32 hex digits.</summary>
+    private static string? TabId(object tab) =>
+        Reflect.TryGet(tab, "Id") is { } id && ModuleGuid(Reflect.TryGet(tab, "OwnerESpace")) is { } key ? $"{id}/{key:N}" : null;
+
+    /// <summary>
+    /// The tabs a module argument names, as Service Studio's own server resolves eSpaceName: the tab
+    /// with that tabId; else the tabs holding the module with that key (with or without dashes);
+    /// else those holding a module of that name (here in any case, as the bridge always took names).
+    /// </summary>
+    private static List<object> MatchTabs(IEnumerable<object> tabs, string module)
+    {
+        var value = module.Trim();
+        var all = tabs.Where(t => Reflect.TryGet(t, "OwnerESpace") != null).ToList();
+        var byTab = all.Where(t => string.Equals(TabId(t), value, StringComparison.OrdinalIgnoreCase)).Take(1).ToList();
+        if (byTab.Count > 0)
+        {
+            return byTab;
+        }
+
+        var byKey = Guid.TryParse(value, out var key) ? all.Where(t => ModuleGuid(Reflect.TryGet(t, "OwnerESpace")) == key).ToList() : [];
+        return byKey.Count > 0
+            ? byKey
+            : all.Where(t => string.Equals(Reflect.TryGet(Reflect.TryGet(t, "OwnerESpace"), "Name") as string, value, StringComparison.OrdinalIgnoreCase)).ToList();
+    }
+
+    /// <summary>The refusal for a module argument several open tabs match, naming each with its tabId.</summary>
+    private static BridgeException Ambiguous(string module, IEnumerable<object> tabs) =>
+        new($"Several open modules match '{module}': pass the tabId of the one to work on as module. Candidates: "
+            + string.Join(", ", tabs.Select(t => $"{Reflect.TryGet(Reflect.TryGet(t, "OwnerESpace"), "Name")} (tabId '{TabId(t)}', on {TabHost(t)})")) + ".");
+
+    /// <summary>The refusal for a module argument no open tab matches.</summary>
+    private static BridgeException NotOpen(string module, Connection connection) =>
+        new($"{module} isn't open in Service Studio (signed in to {connection.Host}). Open it first."
+            + (module.Contains('/') ? " A tabId stops matching once its tab closes or holds another module: Service Studio's listOpenModules gives the current ones." : string.Empty));
+
+    /// <summary>
+    /// The open module a tool acts on, from its tabId, key or name (see MatchTabs), with the
+    /// environment it's open on: host's, or else the tab's own window's, so a tabId or key also picks
+    /// the environment. Name is the module's name once found (the argument otherwise), for messages.
+    /// Tab is null when nothing open matches; several matches are refused, listing their tabIds.
+    /// </summary>
+    private static (Connection Connection, object? Tab, string Name) ResolveOpenModule(string? host, string module)
+    {
+        var runtimeType = Reflect.FindType("ServiceStudio.Presenter.RuntimeImplementation", "ServiceStudio.Presenter");
+        var runtime = Reflect.Static(runtimeType, "Instance") ?? throw new BridgeException("Service Studio hasn't finished starting.");
+        var tabs = Reflect.Enumerate(Reflect.TryGet(runtime, "Aggregators"))
+            .Where(t => TabHost(t) is { } tabHost && (host == null || string.Equals(tabHost, host, StringComparison.OrdinalIgnoreCase)));
+        var matches = MatchTabs(tabs, module);
+        if (matches.Count > 1)
+        {
+            throw Ambiguous(module, matches);
+        }
+
+        if (matches.Count == 0)
+        {
+            return (Pick(host), null, module);
+        }
+
+        var tab = matches[0];
+        return (Pick(host ?? TabHost(tab)), tab, Reflect.TryGet(Reflect.TryGet(tab, "OwnerESpace"), "Name") as string ?? module);
     }
 
     /// <summary>

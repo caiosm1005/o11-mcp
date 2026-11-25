@@ -92,9 +92,13 @@ internal static partial class Studio
     /// </summary>
     public static object LayoutFlows(string? host, string module, string? flows, bool dryRun)
     {
-        var connection = Pick(host);
-        var tab = OpenTab(connection, module)
-            ?? throw new BridgeException($"{module} isn't open in Service Studio (signed in to {connection.Host}). Open it first.");
+        var (connection, tab, name) = ResolveOpenModule(host, module);
+        if (tab == null)
+        {
+            throw NotOpen(module, connection);
+        }
+
+        module = name;
         var eSpace = Reflect.Get(tab, "OwnerESpace") ?? throw new BridgeException($"Service Studio's tab for {module} has no module loaded yet.");
 
         // Positions changed in the live module while Service Studio's MCP server has a working copy

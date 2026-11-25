@@ -61,7 +61,7 @@ internal static partial class Studio
         var connection = Pick(host);
         var open = OpenModules(connection);
         var wanted = modules?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList()
-            ?? open.Select(m => m.Name).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            ?? open.Select(m => TabId(m.Tab) ?? m.Name).ToList();
         if (wanted.Count == 0)
         {
             throw new BridgeException($"No module is open in Service Studio on {connection.Host}.");
@@ -86,14 +86,15 @@ internal static partial class Studio
     private static object UploadOne(Connection connection, List<(string Name, object Tab)> open, List<object> environment,
         object command, MethodInfo canExecute, MethodInfo execute, string name)
     {
-        var tabs = open.Where(m => string.Equals(m.Name, name, StringComparison.OrdinalIgnoreCase)).ToList();
+        var tabs = MatchTabs(open.Select(m => m.Tab), name);
         if (tabs.Count != 1)
         {
-            return new { Module = name, Status = "failed", Error = tabs.Count == 0 ? "It isn't open in Service Studio." : "It's open in more than one tab: close all but one." };
+            return new { Module = name, Status = "failed", Error = tabs.Count == 0 ? "It isn't open in Service Studio." : Ambiguous(name, tabs).Message };
         }
 
-        var tab = tabs[0].Tab;
+        var tab = tabs[0];
         var eSpace = Reflect.TryGet(tab, "OwnerESpace");
+        name = Reflect.TryGet(eSpace, "Name") as string ?? name;
         string? warning = null;
         if (eSpace != null && EditSessionOn(eSpace, out _) == true)
         {

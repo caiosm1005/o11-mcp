@@ -55,7 +55,7 @@ This fork adds a second MCP server, the **Service Studio MCP Bridge**, for thing
 | Lay out a module's flows and notes in one go | — (by hand, flow by flow) | `layoutFlows` |
 | Upload open modules as new versions, without publishing | — (`omlPublish` uploads and publishes) | `uploadModules` |
 | Create an application, or change its name, description, colour, icon or kind | — | `createApplication`, `updateApplication` |
-| Create a module, or convert one to Service or a Library | — | `createModule`, `convertModule` |
+| Create, clone or move a module, or convert one to Service or a Library | — | `createModule`, `cloneModule`, `moveModule`, `convertModule` |
 | Show the tenant identifier on a referenced multi-tenant entity | — (read-only on a reference) | `setReferenceTenantIdentifier` |
 
 Every result names the environment it came from (host, name and user).
@@ -78,7 +78,7 @@ Then quit and reopen Service Studio, register the bridge with the command the sc
 
 **Update** by running the same script again from an up-to-date clone, then quitting and reopening Service Studio and starting a new agent session. It keeps your token, port and registration. Agents check the installed bridge's version against [`BRIDGE.md`](servicestudio-mcp-oml/BRIDGE.md) and offer the update when it's out of date.
 
-**Safety:** it never saves or publishes: what it changes (a module it opens, a dependency it adds) stays unsaved in Service Studio for you to keep or undo. It doesn't delete or move modules or applications. It listens on `127.0.0.1` only and requires a token that only you can read. Other .NET apps never load it. Opt out for one launch with `SSBRIDGE_DISABLE=1`, or remove it with `bridge/scripts/uninstall.sh`.
+**Safety:** it never saves or publishes: what it changes (a module it opens, a dependency it adds) stays unsaved in Service Studio for you to keep or undo. It doesn't delete modules or applications; the tools that change the server (`uploadModules`, `createApplication`, `updateApplication`, `moveModule`) are for when you ask. It listens on `127.0.0.1` only and requires a token that only you can read. Other .NET apps never load it. Opt out for one launch with `SSBRIDGE_DISABLE=1`, or remove it with `bridge/scripts/uninstall.sh`.
 
 More: [`servicestudio-mcp-oml/BRIDGE.md`](servicestudio-mcp-oml/BRIDGE.md) has the rules agents follow and how this fork is maintained; [`bridge/README.md`](bridge/README.md) covers how the bridge works, its safety, and its tests.
 
