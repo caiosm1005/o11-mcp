@@ -269,7 +269,9 @@ How the bridge fits with SKILL.md:
   without opening it. Service Studio clones from a module's tab, so with no module open in the
   window, open one first. Closing the clone's tab without saving loses it, and a copy saved to a file
   and reopened no longer knows its application. Service Studio's "Module cloned" message is
-  closed for you.
+  closed for you. With bridge 0.11.0, a clone opened with the application given was still created
+  in Independent Modules by its first publish (seen 2026-11-25): after that publish, check its
+  application with `listModules`, and `moveModule` it where it belongs.
 - **Moving a module to another application.** `moveModule` does what the module's Move on Service
   Studio's application page does: a server change, at once, so call it only when the user asks
   for that move (a module in the wrong application, say). The module itself doesn't change and
@@ -280,7 +282,10 @@ How the bridge fits with SKILL.md:
   move would delete the application: that one is the user's to do in Service Studio. It returns
   the application before and after, as the server lists it. A tab holding the module publishes it
   into the new application from then on. A module open but never published isn't on the server:
-  for it only the application its first publish creates it in changes (`retargeted`).
+  for it only the application its first publish creates it in changes (`retargeted`). With bridge
+  0.11.0, a module open in Service Studio but named by its name, with `host`, was refused with
+  `CommunicationException: Login needed` (seen 2026-11-25); its tab's `tabId`, without `host`,
+  moved it.
 - **Converting a module.** `convertModule` runs Service Studio's own Module › Convert command:
   Traditional, Reactive or Phone to Service, or to ReactiveLibrary, as far as Service Studio offers
   it for that module (a refusal lists what it does offer). It refuses a module with errors, one
@@ -314,7 +319,11 @@ How the bridge fits with SKILL.md:
 Known limitations: two modules with the same name (an espace and an extension, say) can't be told
 apart, and servers on the newer REST module API return no version numbers. `getConsumers` finds
 no consumers for an extension (verified 2026-11-22 on one that dozens of modules use), so it can't
-tell which modules use one, and `getElementConsumers` refuses an extension's elements. See [`bridge/README.md`](../bridge/README.md) for the rest.
+tell which modules use one, and `getElementConsumers` refuses an extension's elements. With
+bridge 0.11.0, `getModuleVersions` and `getConsumers` without `host` failed with "Service Studio
+has no application service for this connection" while a Service Studio window had no module open,
+and the same calls with `host` worked (seen 2026-11-25): on that error, pass `host` (from `status`).
+See [`bridge/README.md`](../bridge/README.md) for the rest.
 
 ## Gaps still open
 
@@ -409,6 +418,12 @@ Claude Code).
 3. **Open:** ask the user to start a new session, which connects to the bridge and lists its
    tools. Call the bridge only through those tools, never around them (curl or hand-written
    JSON-RPC).
+
+The same goes for a tool that `status` lists, even as `ok` under `Capabilities`, but that the
+session doesn't offer: the agent keeps the tool list it got when it connected, so tools a bridge
+update added after the session started stay missing (seen with Claude Code, 2026-11-25, for
+0.11.0's `cloneModule` and `moveModule`). Ask the user to reconnect `servicestudio-bridge` (in
+Claude Code, from `/mcp`) or to start a new session.
 
 ## Maintaining the fork
 
