@@ -269,9 +269,10 @@ How the bridge fits with SKILL.md:
   without opening it. Service Studio clones from a module's tab, so with no module open in the
   window, open one first. Closing the clone's tab without saving loses it, and a copy saved to a file
   and reopened no longer knows its application. Service Studio's "Module cloned" message is
-  closed for you. With bridge 0.11.0, a clone opened with the application given was still created
-  in Independent Modules by its first publish (seen 2026-11-25): after that publish, check its
-  application with `listModules`, and `moveModule` it where it belongs.
+  closed for you. The clone is registered as pending in its application, as Create Module
+  registers a new module, so its first publish creates it there. Bridge 0.11.0 didn't register it,
+  and that publish created it in Independent Modules: for a clone made with 0.11.0, check its
+  application after that publish (`listModules`) and `moveModule` it where it belongs.
 - **Moving a module to another application.** `moveModule` does what the module's Move on Service
   Studio's application page does: a server change, at once, so call it only when the user asks
   for that move (a module in the wrong application, say). The module itself doesn't change and
@@ -282,10 +283,9 @@ How the bridge fits with SKILL.md:
   move would delete the application: that one is the user's to do in Service Studio. It returns
   the application before and after, as the server lists it. A tab holding the module publishes it
   into the new application from then on. A module open but never published isn't on the server:
-  for it only the application its first publish creates it in changes (`retargeted`). With bridge
-  0.11.0, a module open in Service Studio but named by its name, with `host`, was refused with
-  `CommunicationException: Login needed` (seen 2026-11-25); its tab's `tabId`, without `host`,
-  moved it.
+  for it only the application its first publish creates it in changes (`retargeted`). Bridge
+  0.11.0 could fail with `CommunicationException: Login needed` for an open module named with
+  `host`, through another window's dropped login: the bridge now uses the tab's own window.
 - **Converting a module.** `convertModule` runs Service Studio's own Module › Convert command:
   Traditional, Reactive or Phone to Service, or to ReactiveLibrary, as far as Service Studio offers
   it for that module (a refusal lists what it does offer). It refuses a module with errors, one
@@ -319,10 +319,10 @@ How the bridge fits with SKILL.md:
 Known limitations: two modules with the same name (an espace and an extension, say) can't be told
 apart, and servers on the newer REST module API return no version numbers. `getConsumers` finds
 no consumers for an extension (verified 2026-11-22 on one that dozens of modules use), so it can't
-tell which modules use one, and `getElementConsumers` refuses an extension's elements. With
-bridge 0.11.0, `getModuleVersions` and `getConsumers` without `host` failed with "Service Studio
-has no application service for this connection" while a Service Studio window had no module open,
-and the same calls with `host` worked (seen 2026-11-25): on that error, pass `host` (from `status`).
+tell which modules use one, and `getElementConsumers` refuses an extension's elements. Bridges
+before 0.11.1 could fail without `host` with "Service Studio has no application service for this
+connection" while a window had no module open; they now use a window that's logged in and has
+its services (`Ready` in `status`). If it still happens, pass `host` (from `status`).
 See [`bridge/README.md`](../bridge/README.md) for the rest.
 
 ## Gaps still open
@@ -338,7 +338,7 @@ The bridge's code is in the fork's [`bridge/`](../bridge/) folder: a .NET startu
 inside Service Studio and serves MCP on `http://127.0.0.1:48720/mcp`. It needs macOS (Windows
 isn't scripted yet) and the .NET 10 SDK.
 
-**Current version: 0.11.0.** An installed bridge reports its version in `status` (`Bridge`) and
+**Current version: 0.11.1.** An installed bridge reports its version in `status` (`Bridge`) and
 in `~/Library/Application Support/ServiceStudioBridge/bin/VERSION`. An install without that file
 is older than 0.2.0.
 

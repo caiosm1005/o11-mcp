@@ -214,14 +214,21 @@ internal static partial class Studio
 
     private sealed record CloneModuleApi(MethodInfo CloneESpace, Type Tab, MethodInfo SetName, MethodInfo Execute, Type Runtime, PropertyInfo AutoClose);
 
-    /// <summary>A tab's publish details (IPublishInfoProvider): the application its module publishes into, by name and key.</summary>
-    private sealed record PublishTargetApi(PropertyInfo PublishInfo, PropertyInfo OwnerApplicationName, PropertyInfo OwnerApplicationKey);
+    /// <summary>
+    /// Where the application a module publishes into is recorded: the tab's publish details
+    /// (IPublishInfoProvider), and, for a module not on the server yet, the application page's
+    /// pending modules, which set ESpace.PendingApplicationKey, the key its first upload sends.
+    /// </summary>
+    private sealed record PublishTargetApi(PropertyInfo PublishInfo, PropertyInfo OwnerApplicationName, PropertyInfo OwnerApplicationKey,
+        PropertyInfo PendingApplicationKey, MethodInfo HandleNewModule, MethodInfo IsPendingModule, MethodInfo MovePendingModule);
 
     private static PublishTargetApi? publishTargetApi;
 
     /// <summary>
-    /// Where Service Studio records the application a module open in a tab publishes into: Create
-    /// Module sets it for a new module, and the application page's Move updates it for an open one.
+    /// The members Service Studio records a module's application with: Create Module sets the tab's
+    /// publish details and registers the new module as pending in its application
+    /// (IServerPagePresenter.HandleNewApplicationModule); the application page's Move updates the
+    /// publish details, and moves a pending module (MovePendingModule).
     /// </summary>
     private static PublishTargetApi PublishTargetMembers()
     {
@@ -236,7 +243,44 @@ internal static partial class Studio
         PropertyInfo Writable(string name) => publishInfo.PropertyType.GetProperty(name) is { CanWrite: true } p
             ? p
             : throw new BridgeException($"IPublishInfoProvider.{name} is missing or read-only");
-        return publishTargetApi = new PublishTargetApi(publishInfo, Writable("OwnerApplicationName"), Writable("OwnerApplicationKey"));
+        var pendingKey = Reflect.FindType("ServiceStudio.Model.ESpace", "ServiceStudio.Framework").GetProperty("PendingApplicationKey") is { CanRead: true, CanWrite: true } k
+            ? k
+            : throw new BridgeException("ESpace.PendingApplicationKey is missing or read-only");
+        var page = Reflect.FindType("ServiceStudio.Presenter.IServerPagePresenter", "ServiceStudio.Presenter");
+        MethodInfo Method(string name, int parameters) => page.GetMethods().SingleOrDefault(m => m.Name == name && m.GetParameters().Length == parameters)
+            ?? throw new BridgeException($"IServerPagePresenter.{name} is missing");
+        return publishTargetApi = new PublishTargetApi(publishInfo, Writable("OwnerApplicationName"), Writable("OwnerApplicationKey"),
+            pendingKey, Method("HandleNewApplicationModule", 3), Method("IsPendingModule", 2), Method("MovePendingModule", 4));
+    }
+
+    /// <summary>The application key a module not on the server yet sends with its first upload (ESpace.PendingApplicationKey).</summary>
+    private static object? PendingApplication(object eSpace) => PublishTargetMembers().PendingApplicationKey.GetValue(eSpace);
+
+    /// <summary>
+    /// Records, for a module not on the server yet, the application its first upload creates it in,
+    /// as Create Module does: registers it as pending there on the window's application page, or
+    /// moves it there when it's pending in another one, which sets ESpace.PendingApplicationKey.
+    /// Returns whether the key now names that application.
+    /// </summary>
+    private static bool SetPendingApplication(object tab, object eSpace, string name, object? key)
+    {
+        var api = PublishTargetMembers();
+        var window = Reflect.Call(tab, "GetOwnerAggregatorWindow") ?? throw new BridgeException("Service Studio's window isn't there.");
+        var page = Reflect.Get(window, "ServerPagePresenter") ?? throw new BridgeException("Service Studio's window has no application page.");
+        var moduleKey = Reflect.Get(eSpace, "Key");
+        var pending = PendingApplication(eSpace);
+        InContext(page, "Recording the application a new module publishes into", () =>
+        {
+            if (pending != null && api.IsPendingModule.Invoke(page, [pending, moduleKey]) is true)
+            {
+                api.MovePendingModule.Invoke(page, [pending, key, name, moduleKey]);
+            }
+            else
+            {
+                api.HandleNewModule.Invoke(page, [key, name, eSpace]);
+            }
+        }, wait: true);
+        return KeyGuid(PendingApplication(eSpace)) == KeyGuid(key);
     }
 
     /// <summary>The application a module open in a tab publishes into, by name (empty when none is set).</summary>
@@ -467,6 +511,14 @@ internal static partial class Studio
             warning = (warning == null ? string.Empty : warning + " ") + $"Service Studio named the clone {named}, not {name}: rename it in its properties.";
         }
 
+        // The first upload creates a module in the application its PendingApplicationKey names; the
+        // tab's publish details alone leave it in Independent Modules.
+        if (!SetPendingApplication(cloneTab, clone, appName, appKey))
+        {
+            warning = (warning == null ? string.Empty : warning + " ") + $"Service Studio didn't record {appName} as the application the clone's first publish "
+                + "creates it in: after that publish, check its application (listModules) and moveModule it there.";
+        }
+
         return Scoped(connection, new
         {
             Module = named,
@@ -574,19 +626,23 @@ internal static partial class Studio
         if (found == null)
         {
             // Never published: as for Service Studio's pending modules, only where it publishes changes.
+            var eSpace = Reflect.Get(tab!, "OwnerESpace") ?? throw new BridgeException($"Service Studio's tab for {module} has no module loaded yet.");
             var before = PublishApplication(tab!);
-            if (string.Equals(before, targetName, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(before, targetName, StringComparison.OrdinalIgnoreCase) && KeyGuid(PendingApplication(eSpace)) == KeyGuid(targetKey))
             {
                 return Scoped(connection, new { Module = module, Application = targetName, Status = "unchanged", Note = $"It publishes into {targetName} already." });
             }
 
             InContext(tab!, $"Setting the application {module} publishes into", () => SetPublishApplication(tab!, targetName, targetKey), wait: true);
+            var recorded = SetPendingApplication(tab!, eSpace, targetName, targetKey);
             return Scoped(connection, new
             {
                 Module = module,
                 Before = string.IsNullOrEmpty(before) ? null : before,
                 After = PublishApplication(tab!),
                 Status = "retargeted",
+                Warning = recorded ? null : $"Service Studio didn't record {targetName} as the application {module}'s first publish creates it in: "
+                    + "after that publish, check its application (listModules) and moveModule it there.",
                 Note = $"{module} isn't on the server yet (never published), so nothing changed there: its first publish (omlPublish, when the user asks) creates it in "
                     + $"{targetName}. Until then that's only in its Service Studio tab: a copy saved to a file and reopened no longer knows it.",
             });

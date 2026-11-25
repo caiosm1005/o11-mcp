@@ -18,7 +18,11 @@ internal static partial class Studio
     private const int DefaultLimit = 200;
     private const int MaxLimit = 2000;
 
-    private sealed record Connection(object Provider, string? Host, string? DisplayName, string? User, string? Module, object Presenter);
+    /// <summary>
+    /// A Service Studio window's server connection. Ready: logged in, with its services, as a window
+    /// can keep a login it has dropped ("Login needed") or not have its services yet.
+    /// </summary>
+    private sealed record Connection(object Provider, string? Host, string? DisplayName, string? User, string? Module, object Presenter, bool Ready);
 
     private sealed record VersionEntry(object Raw, int Version, int VersionId);
 
@@ -29,7 +33,7 @@ internal static partial class Studio
         try
         {
             connections = Connections()
-                .Select(c => (object)new { c.Module, c.Host, c.DisplayName, c.User })
+                .Select(c => (object)new { c.Module, c.Host, c.DisplayName, c.User, c.Ready })
                 .ToList();
         }
         catch (Exception ex)
@@ -727,23 +731,33 @@ internal static partial class Studio
         var seen = new HashSet<object>(ReferenceEqualityComparer.Instance);
         foreach (var presenter in presenters)
         {
-            var provider = Reflect.TryGet(presenter, "ServerCommunicationsProvider");
-            if (provider == null || !seen.Add(provider))
+            if (ConnectionOf(presenter) is { } connection && seen.Add(connection.Provider))
             {
-                continue;
+                yield return connection;
             }
-
-            // Only the host and user name are read from the login: never its secret.
-            var login = Reflect.TryGet(provider, "LoginInfo");
-            var hostInfo = Reflect.TryGet(login, "HostInfo");
-            yield return new Connection(
-                provider,
-                Reflect.TryGet(hostInfo, "HostName") as string,
-                Reflect.TryGet(hostInfo, "DisplayName") as string,
-                Reflect.TryGet(login, "UserName") as string,
-                Reflect.TryGet(Reflect.TryGet(presenter, "OwnerESpace"), "Name") as string,
-                presenter);
         }
+    }
+
+    /// <summary>A presenter's own server connection (a tab's is its window's), or null when it has none.</summary>
+    private static Connection? ConnectionOf(object presenter)
+    {
+        var provider = Reflect.TryGet(presenter, "ServerCommunicationsProvider");
+        if (provider == null)
+        {
+            return null;
+        }
+
+        // Only the host and user name are read from the login: never its secret.
+        var login = Reflect.TryGet(provider, "LoginInfo");
+        var hostInfo = Reflect.TryGet(login, "HostInfo");
+        return new Connection(
+            provider,
+            Reflect.TryGet(hostInfo, "HostName") as string,
+            Reflect.TryGet(hostInfo, "DisplayName") as string,
+            Reflect.TryGet(login, "UserName") as string,
+            Reflect.TryGet(Reflect.TryGet(presenter, "OwnerESpace"), "Name") as string,
+            presenter,
+            Reflect.TryGet(provider, "IsLoggedIn") is true && Reflect.TryGet(provider, "ApplicationManagementService") != null);
     }
 
     /// <summary>The tab (aggregator) that has the module open, in a window signed in to the connection's environment.</summary>
@@ -827,8 +841,11 @@ internal static partial class Studio
             return (Pick(host), null, module);
         }
 
+        // The tab's own window's connection, when it's ready: another window's on the same host may
+        // have dropped its login.
         var tab = matches[0];
-        return (Pick(host ?? TabHost(tab)), tab, Reflect.TryGet(Reflect.TryGet(tab, "OwnerESpace"), "Name") as string ?? module);
+        var connection = ConnectionOf(tab) is { Ready: true, User.Length: > 0 } own ? own : Pick(host ?? TabHost(tab));
+        return (connection, tab, Reflect.TryGet(Reflect.TryGet(tab, "OwnerESpace"), "Name") as string ?? module);
     }
 
     /// <summary>
@@ -904,7 +921,8 @@ internal static partial class Studio
     /// <summary>The environment Service Studio is signed in to; when it's signed in to several, the one named by host.</summary>
     private static Connection Pick(string? host)
     {
-        var signedIn = Connections().Where(c => !string.IsNullOrEmpty(c.Host) && !string.IsNullOrEmpty(c.User)).ToList();
+        // Ready ones first: a window that dropped its login, or has no services yet, fails the call.
+        var signedIn = Connections().Where(c => !string.IsNullOrEmpty(c.Host) && !string.IsNullOrEmpty(c.User)).OrderByDescending(c => c.Ready).ToList();
         if (signedIn.Count == 0)
         {
             throw new BridgeException("Service Studio isn't signed in to any environment: sign in there first.");
