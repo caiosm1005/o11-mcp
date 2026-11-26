@@ -49,6 +49,7 @@ internal static partial class Studio
             Connections = connections,
             Capabilities = Capabilities(),
             AnsweredPrompts = Answered.ToArray(),
+            Tabs = connections.Count > 0 ? TabList() : null,
             Windows = connections.Count > 0 ? WindowList() : null,
             Error = error,
         };
@@ -168,7 +169,24 @@ internal static partial class Studio
                     + $"not version {wanted.Version}: close its tab in Service Studio, then call openModule again.");
             }
 
-            return Scoped(connection, new { Module = name, Status = "alreadyOpen", Version = openVersion });
+            // Busy with no dialog showing: Service Studio holds a prompt for the tab until it's in front.
+            // A module the watch already has (its open in progress) is left to it.
+            if (Opening.ContainsKey(name) || !IsHeld(tab))
+            {
+                return Scoped(connection, new { Module = name, Status = "alreadyOpen", Version = openVersion });
+            }
+
+            OnUiThread(() => Reflect.Call(tab, "Activate"));
+            WatchForMissingDependencies(name, connection.Host, Reflect.TryGet(found, "Key")?.ToString(), promptOnly: true);
+            return Scoped(connection, new
+            {
+                Module = name,
+                Status = "alreadyOpen",
+                Version = openVersion,
+                Note = "Its tab was busy with no dialog showing, which is how a prompt Service Studio holds until the tab is in front looks, "
+                    + "so the bridge brought it to the front. For a few minutes it closes the missing-dependencies prompt there if that's what shows "
+                    + "(status lists it under AnsweredPrompts); call status to see anything else that showed (Windows) and whether the tab is still busy (Tabs).",
+            });
         }
 
         var (open, published) = OpenFromEnvironment();

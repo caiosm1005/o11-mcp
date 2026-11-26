@@ -25,8 +25,11 @@ internal static class Tools
         new("status",
             "The bridge and Service Studio versions, each Service Studio window (its module, the environment it's signed in to, host and name, and the user), " +
             "Capabilities: whether openModule, addDependency, layoutFlows, the application and module tools, setReferenceTenantIdentifier and the dialog watch work with this Service Studio build, " +
-            "AnsweredPrompts: the reference checks the bridge cancelled and the check's messages it closed after openModule, each with what it said, and Windows: " +
-            "Service Studio's open windows (title, kind, whether the bridge counts it as a dialog, the module whose tab it belongs to, a message's id and type). Call it first.",
+            "AnsweredPrompts: the reference checks the bridge cancelled and the check's messages it closed after openModule, each with what it said, " +
+            "Tabs: each module tab, whether it's busy (its queue doesn't run anything within a second, which is what Service Studio's own server means by " +
+            "\"Service Studio is busy\") and the dialogs listed for it; busy with none listed means Service Studio is holding a prompt for the tab until it's in front, " +
+            "and Windows: Service Studio's open windows (title, kind, whether the bridge counts it as a dialog, the module whose tab it belongs to, a message's id and type). " +
+            "Call it first, and whenever Service Studio's own server answers that it's busy.",
             [],
             _ => Studio.Status()),
         new("listApplications",
@@ -98,6 +101,7 @@ internal static class Tools
             "By default that is the published version (the latest upload when none is published); version opens the latest upload or any other. " +
             "Use it only when Service Studio's own server has no openModule, and only for a module the user's request names. " +
             "A module already open comes back as alreadyOpen with the version its tab holds; asking for another version of it fails until its tab is closed. " +
+            "When that tab is busy with no dialog showing (a prompt held until the tab is in front), the bridge brings it forward and closes the missing-dependencies prompt if that's what shows. " +
             "Once it has loaded, the bridge cancels Service Studio's reference check (\"Getting references from …\") as its Cancel button does, and closes " +
             "any message that check shows in the module's tab (the missing-dependencies prompt, so Manage Dependencies doesn't open; the communication error a " +
             "cancelled check can leave; \"not logged in\") as its close button does; status lists each under AnsweredPrompts, and the references stay unchecked. " +

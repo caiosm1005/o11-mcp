@@ -55,7 +55,7 @@ and user).
 
 | Bridge tool | What it returns | Gap in the official server |
 | --- | --- | --- |
-| `status` | Bridge and Service Studio versions; each window's module, environment and user | — (call it first) |
+| `status` | Bridge and Service Studio versions; each window's module, environment and user; each tab, busy or not, and its dialogs | — (call it first) |
 | `listApplications` | The environment's applications and their modules | No list of the server's applications |
 | `listModules` | The environment's modules: kind, application, latest version, last upload | `listApps` lists only open modules |
 | `getModuleVersions` | A module's version history: number, uploader, date, comment, which one is published | No version history |
@@ -136,7 +136,10 @@ How the bridge fits with SKILL.md:
   closes the prompt as its close button does if it comes anyway, so Manage Dependencies doesn't
   open; `status` lists each under `AnsweredPrompts`. Service Studio holds that prompt until the
   module's tab is selected, and opens queued after it wait meanwhile, so the bridge brings each
-  module it opens to the front once it has loaded (the tabs switch, as a foreground open does). Either way the references stay as the module
+  module it opens to the front once it has loaded (the tabs switch, as a foreground open does).
+  A check can end on its own before the bridge sees it, and its prompt come after another open has
+  taken the front: while the tab stays busy with no dialog showing, the bridge brings it forward
+  again, less often each time, and watches it for up to an hour. Either way the references stay as the module
   saved them, unchecked: refresh them (§ 3.2) before relying on producers' latest signatures, and
   fix missing ones with `addDependency`.
 - **The reference check's other messages.** The check behind that prompt
@@ -152,6 +155,14 @@ How the bridge fits with SKILL.md:
   server-communication message's (the debugger's included, whose data an open also fetches).
   Other messages, and other tabs, are left for the user.
   `status` → `Windows` says which module's tab each dialog belongs to, and a message's id and type.
+- **"Service Studio is busy"** from Service Studio's own server (`omlRefreshReferences`,
+  `omlPublish`, `omlMerge`) means the module's tab didn't run anything within a second, and it
+  doesn't say why. Call `status` at once, rather than retrying: `Windows` names a dialog in the
+  way and the module whose tab it belongs to, and `Tabs` marks each tab `Busy` with the dialogs
+  listed for it. A tab busy with no dialog listed is one Service Studio is holding a prompt for
+  until it's in front: `openModule` on that module brings its tab forward and closes the
+  missing-dependencies prompt if that's what shows (its result says so); then call `status` again.
+  Anything else that shows is the user's to answer.
 - **A dialog open in Service Studio** stops the module's queue, where `addDependency` and
   `layoutFlows` wait. They fail within seconds, naming the dialog ("Service Studio has a dialog
   open (…)"): ask the user to answer it, then try again. The bridge answers no dialog but the
@@ -338,7 +349,7 @@ The bridge's code is in the fork's [`bridge/`](../bridge/) folder: a .NET startu
 inside Service Studio and serves MCP on `http://127.0.0.1:48720/mcp`. It needs macOS (Windows
 isn't scripted yet) and the .NET 10 SDK.
 
-**Current version: 0.11.1.** An installed bridge reports its version in `status` (`Bridge`) and
+**Current version: 0.12.0.** An installed bridge reports its version in `status` (`Bridge`) and
 in `~/Library/Application Support/ServiceStudioBridge/bin/VERSION`. An install without that file
 is older than 0.2.0.
 

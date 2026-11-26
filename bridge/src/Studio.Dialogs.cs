@@ -17,14 +17,52 @@ internal static partial class Studio
     /// <summary>How long after openModule the bridge watches for the reference check and its prompt.</summary>
     private static readonly TimeSpan PromptWatch = TimeSpan.FromMinutes(3);
 
-    /// <summary>A module openModule is opening: when it was asked, the environment's host, and the module's key.</summary>
-    private sealed record PendingOpen(DateTime Since, string? Host, string? Key);
+    /// <summary>How long the watch stays on a module whose tab is still busy with no dialog showing (something held for it).</summary>
+    private static readonly TimeSpan PromptHold = TimeSpan.FromHours(1);
+
+    /// <summary>How long a tab's queue may take to run an empty action before the bridge counts it busy, as Service Studio's own server does.</summary>
+    private static readonly TimeSpan BusyProbe = TimeSpan.FromSeconds(1);
+
+    /// <summary>How many times the watch brings a module's tab to the front, its first time included.</summary>
+    private const int MaxActivations = 8;
+
+    /// <summary>
+    /// A module openModule is opening: when it was asked, the environment's host, the module's key,
+    /// and whether only the missing-dependencies prompt is to be closed (a tab already open, which
+    /// openModule brought to the front because something was held for it).
+    /// </summary>
+    private sealed record PendingOpen(DateTime Since, string? Host, string? Key, bool PromptOnly = false);
 
     /// <summary>The modules openModule is opening, by name.</summary>
     private static readonly ConcurrentDictionary<string, PendingOpen> Opening = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>When each module being opened was first seen loaded, and whether its tab was brought to the front.</summary>
-    private static readonly ConcurrentDictionary<string, (DateTime Loaded, bool Activated)> LoadedAt = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>How a module being opened is getting on since its tab loaded (the watch loop alone changes it).</summary>
+    private sealed class OpenProgress
+    {
+        /// <summary>When its tab was first seen loaded.</summary>
+        public DateTime Loaded { get; init; }
+
+        /// <summary>How many times its tab was brought to the front, and when last.</summary>
+        public int Activations { get; set; }
+
+        public DateTime LastActivated { get; set; }
+
+        /// <summary>An empty action queued on its tab, which runs once the tab is idle, and when it was queued.</summary>
+        public Task? Probe { get; set; }
+
+        public DateTime ProbeStarted { get; set; }
+
+        /// <summary>Its tab's queue didn't run the latest probe within BusyProbe.</summary>
+        public bool Busy { get; set; }
+
+        /// <summary>Its tab listed no modal dialog when last looked at: busy then means something is held until the tab is in front.</summary>
+        public bool NothingShowing { get; set; }
+
+        public bool Held => Busy && NothingShowing;
+    }
+
+    /// <summary>The modules being opened whose tab has loaded, by name.</summary>
+    private static readonly ConcurrentDictionary<string, OpenProgress> Progress = new(StringComparer.OrdinalIgnoreCase);
 
     private const string MessagesModuleType = "ServiceStudio.WebViewImplementation.MessagesViewModule";
 
@@ -207,7 +245,101 @@ internal static partial class Studio
         _ = (module.GetField("Cancel", BindingFlags.NonPublic | BindingFlags.Instance), module.GetField("GetProgressInfo", BindingFlags.NonPublic | BindingFlags.Instance),
             module.GetProperty("IsCancelEnabled"), Reflect.FindType("Avalonia.LogicalTree.LogicalExtensions", "Avalonia.Base").GetMethod("GetLogicalDescendants"))
             is ({ }, { }, { }, { }) ? 0 : throw new BridgeException("a member the bridge reads to cancel the reference check is missing");
+        // ITopLevelPresenter.ExecuteInContext(Action, executeWhenTopLevelIsIdle): how a tab is told busy.
+        _ = Reflect.FindType("ServiceStudio.Presenter.ITopLevelPresenter", "ServiceStudio.Presenter").GetMethod("ExecuteInContext", [typeof(Action), typeof(bool)]) is { ReturnType: var returns }
+            && typeof(Task).IsAssignableFrom(returns)
+            ? 0 : throw new BridgeException("ITopLevelPresenter.ExecuteInContext(Action, bool), which tells a tab busy, is missing");
     }
+
+    /// <summary>
+    /// Queues an empty action on a tab to run once it's idle, as Service Studio's own server does to
+    /// tell a tab busy: it hasn't run within BusyProbe while a dialog or an operation holds the tab.
+    /// Null when the bridge can't queue one.
+    /// </summary>
+    private static Task? ProbeTab(object tab)
+    {
+        try
+        {
+            return Reflect.Call(tab, "ExecuteInContext", (Action)(() => { }), true) as Task;
+        }
+        catch (Exception ex)
+        {
+            if (Interlocked.Exchange(ref probeFailed, 1) == 0)
+            {
+                Log.Info($"Couldn't tell whether a tab is busy: {Reflect.Unwrap(ex).Message}");
+            }
+
+            return null;
+        }
+    }
+
+    private static int probeFailed;
+
+    /// <summary>Whether these probes haven't run within BusyProbe, waiting for all of them at once; null where there's no probe.</summary>
+    private static List<bool?> StillBusy(List<Task?> probes)
+    {
+        var deadline = DateTime.UtcNow + BusyProbe;
+        foreach (var probe in probes)
+        {
+            try
+            {
+                var left = deadline - DateTime.UtcNow;
+                probe?.Wait(left > TimeSpan.Zero ? left : TimeSpan.Zero);
+            }
+            catch (Exception)
+            {
+                // A probe that failed has run: the tab isn't busy.
+            }
+        }
+
+        return probes.Select(p => p == null ? (bool?)null : !p.IsCompleted).ToList();
+    }
+
+    /// <summary>
+    /// Whether a tab is held: busy for over a second with no modal dialog listed for it, which is how
+    /// a prompt or progress window Service Studio holds until the tab is in front looks.
+    /// </summary>
+    private static bool IsHeld(object tab) =>
+        StillBusy([ProbeTab(tab)])[0] is true && OnUiThread(() => TabDialogs(tab, modal: true).Count == 0);
+
+    /// <summary>
+    /// Every module tab, for status: whether it's busy (its queue didn't run an empty action within a
+    /// second, as Service Studio's own server tells it) and the modal dialogs listed for it. A tab
+    /// busy with none listed is one Service Studio holds something for until it's in front.
+    /// </summary>
+    private static object? TabList()
+    {
+        try
+        {
+            var tabs = OnUiThread(() => Aggregators()
+                .Select(a => (Tab: a,
+                    Module: Reflect.TryGet(Reflect.TryGet(a, "OwnerESpace"), "Name") as string ?? "(loading)",
+                    Dialogs: TabDialogs(a, modal: true).Select(WindowTitle).ToList()))
+                .ToList());
+            var busy = StillBusy(tabs.Select(t => ProbeTab(t.Tab)).ToList());
+            return tabs.Select((t, i) => (object)new
+                {
+                    t.Module,
+                    TabId = TabId(t.Tab),
+                    Busy = busy[i],
+                    t.Dialogs,
+                    Note = busy[i] is true && t.Dialogs.Count == 0
+                        ? "Busy with no dialog showing: Service Studio is most likely holding a prompt for this tab until it's in front. "
+                            + "openModule on this module brings the tab forward (and closes the missing-dependencies prompt if that's what shows); "
+                            + "or ask the user to select the tab."
+                        : null,
+                })
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            return Reflect.Unwrap(ex).Message;
+        }
+    }
+
+    /// <summary>Service Studio's module tabs, loading ones included (call on the UI thread).</summary>
+    private static List<object> Aggregators() =>
+        Reflect.Enumerate(Reflect.TryGet(Reflect.Static(Reflect.FindType("ServiceStudio.Presenter.RuntimeImplementation", "ServiceStudio.Presenter"), "Instance"), "Aggregators"));
 
     /// <summary>
     /// For a few minutes after openModule, handles the reference check Service Studio runs once the
@@ -216,14 +348,32 @@ internal static partial class Studio
     /// a prompt held for it shows. Either answer leaves the references as the module saved them,
     /// unchecked against the server. The check's other messages in the module's tab (the
     /// communication error a cancelled check can leave, "not logged in") are closed too, as their
-    /// close button does. Every other dialog is left for the user.
+    /// close button does. Every other dialog is left for the user. While the module's tab stays busy
+    /// with no dialog showing (a prompt held until the tab is in front, which a later open can take
+    /// from it), the tab is brought forward again, less often each time, and the watch goes on for up
+    /// to an hour. With promptOnly (a tab already open, brought forward
+    /// by openModule because something was held for it), only the missing-dependencies prompt is
+    /// closed, nothing is cancelled, and the watch ends after a few minutes.
     /// </summary>
-    private static void WatchForMissingDependencies(string module, string? host, string? key)
+    private static void WatchForMissingDependencies(string module, string? host, string? key, bool promptOnly = false)
     {
-        Opening[module] = new PendingOpen(DateTime.UtcNow, host, key);
-        LoadedAt.TryRemove(module, out _);
+        var now = DateTime.UtcNow;
+        Opening[module] = new PendingOpen(now, host, key, promptOnly);
+        Progress.TryRemove(module, out _);
+        if (promptOnly)
+        {
+            Progress[module] = new OpenProgress { Loaded = now, Activations = 1, LastActivated = now };
+        }
+
         CheckCancelled.TryRemove(module, out _);
         StartWatch();
+    }
+
+    private static void EndOpenWatch(string module)
+    {
+        Opening.TryRemove(module, out _);
+        Progress.TryRemove(module, out _);
+        CheckCancelled.TryRemove(module, out _);
     }
 
     /// <summary>A module convertModule is converting: since when, its environment, and the ids of the messages to close in its tab.</summary>
@@ -258,11 +408,17 @@ internal static partial class Studio
             {
                 foreach (var (module, pending) in Opening)
                 {
-                    if (DateTime.UtcNow - pending.Since > PromptWatch)
+                    var age = DateTime.UtcNow - pending.Since;
+                    var held = !pending.PromptOnly && Progress.TryGetValue(module, out var progress) && progress.Held;
+                    if (age > PromptHold || (age > PromptWatch && !held))
                     {
-                        Opening.TryRemove(module, out _);
-                        LoadedAt.TryRemove(module, out _);
-                        CheckCancelled.TryRemove(module, out _);
+                        if (held)
+                        {
+                            Log.Info($"Stopped watching {module}: its tab is still busy with no dialog showing an hour after openModule; "
+                                + "Service Studio may be holding a prompt for it until the tab is selected");
+                        }
+
+                        EndOpenWatch(module);
                     }
                 }
 
@@ -288,6 +444,7 @@ internal static partial class Studio
                         // missing-dependencies prompt by its title still catches it in any other window.
                         AnswerReferenceCheckMessages();
                         AnswerMissingDependencies();
+                        ProbeLoadedTabs();
                         BringLoadedTabsForward();
                     }
 
@@ -325,7 +482,8 @@ internal static partial class Studio
     {
         var cancelled = OnUiThread(() =>
         {
-            var loaded = LoadedPendingModules();
+            // A tab already open, watched for a held prompt only, has no check of openModule's to cancel.
+            var loaded = LoadedPendingModules().Where(l => Opening.TryGetValue(l.Module, out var p) && !p.PromptOnly).ToList();
             var done = new List<(string Message, string Module)>();
             foreach (var window in Windows().Where(w => IsDialog(w) && !IsMessageDialog(w) && Reflect.TryGet(w, "IsVisible") is true))
             {
@@ -338,7 +496,7 @@ internal static partial class Studio
                     var match = loaded
                         .Where(l => !string.IsNullOrEmpty(l.Host) && message.Contains(l.Host, StringComparison.OrdinalIgnoreCase))
                         .OrderBy(l => CheckCancelled.ContainsKey(l.Module))
-                        .ThenByDescending(l => LoadedAt.TryGetValue(l.Module, out var seen) ? seen.Loaded : DateTime.MaxValue)
+                        .ThenByDescending(l => Progress.TryGetValue(l.Module, out var seen) ? seen.Loaded : DateTime.MaxValue)
                         .FirstOrDefault();
                     var cancel = PrivateField(module, "Cancel") as Delegate;
                     if (match.Module != null && cancelEnabled && cancel != null)
@@ -353,7 +511,8 @@ internal static partial class Studio
                         + $"loaded modules being opened: {(loaded.Count == 0 ? "none" : string.Join(", ", loaded.Select(l => l.Module)))}");
                 }
 
-                if (modules.Count == 0)
+                // A message is described where messages are handled, with its tab and id.
+                if (modules.Count == 0 && !Described.TryGetValue(window, out _) && MessageOf(window) == null)
                 {
                     Describe(window, $"Dialog \"{WindowTitle(window)}\" ({window.GetType().Name}) has no progress module; its web views host "
                         + string.Join(", ", HostedModules(window).Select(m => m.GetType().Name).Distinct().Take(25)));
@@ -387,8 +546,7 @@ internal static partial class Studio
     /// <summary>The pending modules whose tab has loaded, with the tab (call on the UI thread).</summary>
     private static List<(string Module, string? Host, object Tab)> LoadedPendingTabs()
     {
-        var runtimeType = Reflect.FindType("ServiceStudio.Presenter.RuntimeImplementation", "ServiceStudio.Presenter");
-        var tabs = Reflect.Enumerate(Reflect.TryGet(Reflect.Static(runtimeType, "Instance"), "Aggregators"))
+        var tabs = Aggregators()
             .Select(a => (Tab: a, ESpace: Reflect.TryGet(a, "OwnerESpace")))
             .Where(t => t.ESpace != null)
             .Select(t => (t.Tab, Name: Reflect.TryGet(t.ESpace, "Name") as string, Key: Reflect.TryGet(t.ESpace, "Key")?.ToString()))
@@ -404,33 +562,95 @@ internal static partial class Studio
     /// <summary>
     /// Service Studio holds a module's missing-dependencies prompt until its tab is selected, and
     /// the opens queued after it wait meanwhile. So a couple of seconds after a module being opened
-    /// has loaded (time for its reference check to be cancelled), its tab is brought to the front
-    /// once, as a click on it does (ITopLevelPresenter.Activate): a prompt it was holding then
-    /// shows, and the watch closes it.
+    /// has loaded (time for its reference check to be cancelled), its tab is brought to the front,
+    /// as a click on it does (ITopLevelPresenter.Activate): a prompt it was holding then shows, and
+    /// the watch closes it. The check can end on its own, too fast to be seen, and its prompt come
+    /// after another open has taken the front: so while the tab is held (busy, no dialog showing),
+    /// it's brought forward again, 5 s after the last time and twice as long each time after that,
+    /// up to MaxActivations times, one tab at a time.
     /// </summary>
     private static void BringLoadedTabsForward()
     {
         var activated = OnUiThread(() =>
         {
-            var done = new List<string>();
+            var now = DateTime.UtcNow;
+            var recently = Progress.Values.Any(p => now - p.LastActivated < TimeSpan.FromSeconds(3));
+            var done = new List<(string Module, int Times)>();
             foreach (var (module, _, tab) in LoadedPendingTabs())
             {
-                var seen = LoadedAt.GetOrAdd(module, _ => (DateTime.UtcNow, false));
-                if (seen.Activated || DateTime.UtcNow - seen.Loaded < TimeSpan.FromSeconds(2))
+                var progress = Progress.GetOrAdd(module, _ => new OpenProgress { Loaded = now });
+                progress.NothingShowing = TabDialogs(tab, modal: true).Count == 0;
+                var due = progress.Activations == 0
+                    ? now - progress.Loaded >= TimeSpan.FromSeconds(2)
+                    : Opening.TryGetValue(module, out var pending) && !pending.PromptOnly && progress.Held && !recently
+                        && progress.Activations < MaxActivations && now - progress.LastActivated >= Backoff(progress.Activations);
+                if (!due)
                 {
                     continue;
                 }
 
-                LoadedAt[module] = (seen.Loaded, true);
+                progress.Activations++;
+                progress.LastActivated = now;
+                recently = true;
                 Reflect.Call(tab, "Activate");
-                done.Add(module);
+                done.Add((module, progress.Activations));
             }
 
             return done;
         });
-        foreach (var module in activated)
+        foreach (var (module, times) in activated)
         {
-            Log.Info($"Brought {module}'s tab to the front, so a prompt Service Studio holds for it can show");
+            Log.Info(times == 1
+                ? $"Brought {module}'s tab to the front, so a prompt Service Studio holds for it can show"
+                : $"Brought {module}'s tab to the front again ({times} times): it's busy with no dialog showing, so Service Studio is likely holding a prompt for it");
+        }
+    }
+
+    /// <summary>How long after its last time a held tab is brought forward again: 5 s, then twice as long each time, at most 5 minutes.</summary>
+    private static TimeSpan Backoff(int activations) =>
+        TimeSpan.FromSeconds(Math.Min(300, 5 * Math.Pow(2, Math.Max(0, activations - 1))));
+
+    /// <summary>
+    /// Tells, for each module being opened whose tab has loaded, whether the tab is busy, by queuing
+    /// an empty action on it (one at a time, at most one a second) as Service Studio's own server
+    /// does: the reference check and every prompt it shows run in the open's own command on that
+    /// queue, so a prompt held for the tab keeps it busy.
+    /// </summary>
+    private static void ProbeLoadedTabs()
+    {
+        var loaded = OnUiThread(() => LoadedPendingTabs().Select(t => (t.Module, t.Tab)).ToList());
+        var now = DateTime.UtcNow;
+        foreach (var (module, progress) in Progress)
+        {
+            if (!loaded.Any(t => string.Equals(t.Module, module, StringComparison.OrdinalIgnoreCase)))
+            {
+                progress.Busy = false;   // its tab closed, or holds another module
+            }
+        }
+
+        foreach (var (module, tab) in loaded)
+        {
+            if (!Progress.TryGetValue(module, out var progress))
+            {
+                continue;   // BringLoadedTabsForward starts following it
+            }
+
+            if (progress.Probe is { IsCompleted: false })
+            {
+                progress.Busy |= now - progress.ProbeStarted > BusyProbe;
+                continue;
+            }
+
+            if (progress.Probe != null)
+            {
+                progress.Busy = false;
+            }
+
+            if (progress.Probe == null || now - progress.ProbeStarted >= BusyProbe)
+            {
+                progress.Probe = ProbeTab(tab);
+                progress.ProbeStarted = now;
+            }
         }
     }
 
@@ -549,9 +769,16 @@ internal static partial class Studio
     private static void AnswerReferenceCheckMessages()
     {
         var ids = ReferenceCheckMessageIds();
+        var prompt = MissingDependenciesIds();
         var tabs = OnUiThread(() => LoadedPendingTabs().Select(t => (t.Module, t.Tab)).ToList());
-        CloseMessages(tabs, _ => ids, "opening", "it isn't the reference check's");
+        CloseMessages(tabs, module => Opening.TryGetValue(module, out var pending) && pending.PromptOnly ? prompt : ids, "opening", "it isn't the reference check's");
     }
+
+    private static HashSet<string>? missingDependenciesIds;
+
+    /// <summary>The ids the missing-dependencies prompt carries.</summary>
+    private static HashSet<string> MissingDependenciesIds() =>
+        missingDependenciesIds ??= new HashSet<string>(MessageIdTexts(PresenterMessage("Reference_IncompatibleOrMissingDetected")), StringComparer.Ordinal);
 
     /// <summary>
     /// Closes the messages convertModule registered for the converted module's tab (Service Studio's
