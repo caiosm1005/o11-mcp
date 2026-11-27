@@ -316,7 +316,15 @@ internal static partial class Studio
     /// Whether Service Studio's own MCP server has an edit session open, or unmerged changes, on this
     /// module; null, with the reason, when this build doesn't let the bridge see it.
     /// </summary>
-    private static bool? EditSessionOn(object eSpace, out string? problem)
+    private static bool? EditSessionOn(object eSpace, out string? problem) =>
+        McpSession(eSpace, out problem) is { } session ? session.Open || session.Unmerged : null;
+
+    /// <summary>
+    /// Whether Service Studio's own MCP server has an edit session open on this module, and whether it
+    /// has changes from applyModelApiCode that aren't merged; null, with the reason, when this build
+    /// doesn't let the bridge see it.
+    /// </summary>
+    private static (bool Open, bool Unmerged)? McpSession(object eSpace, out string? problem)
     {
         problem = null;
         try
@@ -325,7 +333,7 @@ internal static partial class Studio
             var host = hostType.GetProperty("Current", BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
             if (host == null || appField.GetValue(host) is not { } app)
             {
-                return false;   // the MCP server hasn't started: it has no sessions
+                return (false, false);   // the MCP server hasn't started: it has no sessions
             }
 
             var services = Reflect.Get(app, "Services") as IServiceProvider ?? throw new BridgeException("the MCP server has no service container");
@@ -333,7 +341,7 @@ internal static partial class Studio
             var id = Reflect.Get(eSpace, "InstanceId") ?? throw new BridgeException("the module has no InstanceId");
             // GetOrCreate is what every one of its tools calls; a new entry is empty and closed.
             var entry = Reflect.Call(state, "GetOrCreate", id);
-            return Reflect.TryGet(entry, "IsOpen") is true || Reflect.TryGet(entry, "HasUnmergedChanges") is true;
+            return (Reflect.TryGet(entry, "IsOpen") is true, Reflect.TryGet(entry, "HasUnmergedChanges") is true);
         }
         catch (Exception ex)
         {
@@ -424,6 +432,7 @@ internal static partial class Studio
         return new
         {
             OpenModule = Check(OpenModuleMembers),
+            CloseModule = Check(() => CloseMembers()),
             AddDependency = addDependency,
             // addDependency refuses while Service Studio's MCP server has a session on the module.
             EditSessionCheck = Check(() => McpSessionStateMembers()),

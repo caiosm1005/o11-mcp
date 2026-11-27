@@ -38,11 +38,11 @@ soon as the official server covers the same thing: see [Rules for agents](#rules
    fixes this file describes may be missing: offer the update
    ([Offering to install](#offering-to-install-agents)) before you go on. If the user declines,
    carry on with what the installed bridge offers, and don't offer again in the same
-   conversation. `status` also gives `Capabilities`: whether `openModule`, `addDependency`,
+   conversation. `status` also gives `Capabilities`: whether `openModule`, `closeModule`, `addDependency`,
    `layoutFlows`, the application tools (`Applications`), `createModule`, `cloneModule`, `moveModule`, `convertModule`,
    `setReferenceTenantIdentifier` (`ReferenceTenantIdentifier`), `getElementConsumers`'
    usage counts and parts (`UsageCount`) and the dialog watch (`DialogWatch`) work with this Service Studio build, which updates itself. When one
-   isn't `ok`, don't call it: tell the user, and give the official way (ask them to open the
+   isn't `ok`, don't call it: tell the user, and give the official way (ask them to open or close the
    module, to add the dependency in Manage Dependencies, to create or convert it in Service
    Studio, or to run Find Usages in all Modules there).
 
@@ -66,6 +66,7 @@ and user).
 | `listReferenceable` | The producers a module can reference, with signature hashes | No equivalent of Manage Dependencies' list |
 | `getApplicationDependencies` | An application's dependencies on other applications | No application-level view |
 | `openModule` | Opens a module in a new Service Studio tab, as Open from environment does: the published version, or `version` (`latest`, a number); no file is written | Older builds have no `openModule` |
+| `closeModule` | Closes a module's tab in Service Studio, as the tab's Close does; refuses unsaved changes unless told to discard them | Older builds have no `closeModule` |
 | `addDependency` | Adds a dependency on another module's public element to a module open in Service Studio, unsaved | `AddDependency` fails inside `applyModelApiCode` (upstream issue #10) |
 | `layoutFlows` | Lays out a module's logic flows on Service Studio's grid and wraps and places their notes, as one unsaved, undoable step | Layout is the agent's to do by hand, flow by flow (SKILL.md § 3.1) |
 | `uploadModules` | Uploads open modules to the environment as new versions, without publishing them, as Service Studio's Upload command does; one at a time, each with its result | Only `omlPublish`, which also compiles and deploys |
@@ -96,6 +97,7 @@ Requests that need the bridge, because Service Studio's own server can't answer 
 - "What does application A depend on?": `getApplicationDependencies`.
 - "Open module X": `openModule`; "…on its latest (unpublished) version": `openModule` with
   `version: "latest"`.
+- "Close module X", "close the tabs you opened": `closeModule`.
 - "Add a dependency on X", or any change that uses another module's element ("create a wrapper
   for action X in module M"): `addDependency`.
 - "Lay out the flows", "tidy up this action": `layoutFlows`.
@@ -115,7 +117,7 @@ Requests that need the bridge, because Service Studio's own server can't answer 
 How the bridge fits with SKILL.md:
 
 - **Naming an open module.** Where a bridge tool acts on a module open in Service Studio
-  (`addDependency`, `layoutFlows`, `uploadModules`, `cloneModule`'s source, `moveModule`,
+  (`closeModule`, `addDependency`, `layoutFlows`, `uploadModules`, `cloneModule`'s source, `moveModule`,
   `convertModule`, `setReferenceTenantIdentifier`), `module` takes what Service Studio's own tools take as
   `eSpaceName`: the `tabId` from `listOpenModules`, the module's `key` (with or without dashes) or
   its name. So pass the same value to both servers. A tabId or key names that tab exactly, and it
@@ -142,6 +144,19 @@ How the bridge fits with SKILL.md:
   again, less often each time, and watches it for up to an hour. Either way the references stay as the module
   saved them, unchecked: refresh them (§ 3.2) before relying on producers' latest signatures, and
   fix missing ones with `addDependency`.
+- **Closing a module (§ 0.1).** When the server has no `closeModule`, close what you opened
+  (`openModule`, `createModule`, `cloneModule`) with the bridge's `closeModule` once you're done
+  with it, and another module only when the user asks: never one the user opened. Unlike the
+  official tool, it asks nobody. Where Service Studio's Close would ask, it refuses and says why:
+  an edit session open on the module (merge what you want to keep, then `endOmlEditSession`) or
+  unmerged changes (`omlMerge` or `omlReset`); a dialog or a held prompt in the module's tab (see
+  "Service Studio is busy" below); a server operation, such as a publish, running on it (wait for
+  it); or unsaved changes, merged ones included, which only a publish (`omlPublish`) or an upload
+  (`uploadModules`) puts on the server. A module with a local file stays unsaved after an upload,
+  which doesn't save the file: a publish saves it first. Tell the user then, and pass `discardChanges: true` only
+  when they say to drop those changes: they're gone for good, and a module never published
+  (`createModule`, `cloneModule`) goes with them. A window's last module tab closes like any other:
+  the window stays, on its start page.
 - **The reference check's other messages.** The check behind that prompt
   (`CheckForIncompatibleOrMissingReferences`) can show two more: the server error its server call
   failed with ("Communication error: There was an error connecting to <host>" has shown up the
@@ -349,7 +364,7 @@ The bridge's code is in the fork's [`bridge/`](../bridge/) folder: a .NET startu
 inside Service Studio and serves MCP on `http://127.0.0.1:48720/mcp`. It needs macOS (Windows
 isn't scripted yet) and the .NET 10 SDK.
 
-**Current version: 0.14.0.** An installed bridge reports its version in `status` (`Bridge`) and
+**Current version: 0.15.0.** An installed bridge reports its version in `status` (`Bridge`) and
 in `~/Library/Application Support/ServiceStudioBridge/bin/VERSION`. An install without that file
 is older than 0.2.0.
 

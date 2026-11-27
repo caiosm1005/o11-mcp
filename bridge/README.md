@@ -34,6 +34,7 @@ or a session secret.
 | `listReferenceable` | The producers a module can reference, with signature hashes |
 | `downloadModule` | A module's OML file, published, latest or any version number, and its path |
 | `openModule` | Opens a module in a new Service Studio tab, as *Open from environment* does (no file written) |
+| `closeModule` | Closes a module's tab in Service Studio, as the tab's *Close* does; refuses unsaved changes unless told to discard them |
 | `addDependency` | Adds a dependency on another module's public element to a module open in Service Studio (unsaved) |
 | `layoutFlows` | Lays out a module's logic flows on Service Studio's grid, notes wrapped and placed (one unsaved, undoable step) |
 | `uploadModules` | Uploads open modules to the environment as new versions without publishing them, as Service Studio's *Upload* does |
@@ -66,7 +67,9 @@ Service Studio is signed in to several at once, the tools ask for a `host` inste
   `createApplication`, `updateApplication` and `moveModule` change applications on the server:
   agents call them only when you ask.
 - **No deletes.** Service Studio's services can also delete modules and applications; the bridge
-  exposes none of that. `moveModule` refuses to move an application's last module, which would
+  exposes none of that. `closeModule` refuses a module with unsaved changes; with
+  `discardChanges`, which agents pass only when you say to, it drops them (and a module never
+  published with them). `moveModule` refuses to move an application's last module, which would
   delete the application.
 - **Your access, nothing more.** It acts as the user Service Studio is signed in as, so it can
   do only what that user can.

@@ -158,7 +158,7 @@ This fork adds a second MCP server, the **Service Studio MCP Bridge**
 environment Service Studio is signed in to, so it also reaches modules that aren't open:
 `listApplications`, `listModules`, `getModuleVersions`, `downloadModule` (any version's OML
 file), `getConsumers`, `getElementConsumers`, `searchPublicElements`, `listReferenceable` and
-`getApplicationDependencies`. It also opens modules (`openModule`), adds dependencies to an open
+`getApplicationDependencies`. It also opens and closes modules (`openModule`, `closeModule`), adds dependencies to an open
 module (`addDependency`), lays out a module's flows (`layoutFlows`), creates, clones, moves or converts
 modules (`createModule`, `cloneModule`, `moveModule`, `convertModule`), and sets Show Tenant Identifier on a reference
 (`setReferenceTenantIdentifier`), without saving or publishing; it uploads
@@ -174,6 +174,8 @@ It takes no session token.
   even when the user's prompt asks for the bridge tool, and tell the user.
 - **Module not open and no `openModule`?** Confirm its name with the bridge's `listModules`,
   then open it with the bridge's `openModule` (§ 0.1's rules on which modules to open apply).
+  No `closeModule` either? Close what you opened with the bridge's `closeModule` (§ 0.1's rules
+  on which modules to close apply).
 - **A change needs another module's element?** Add the dependency with the bridge's
   `addDependency` before `startOmlEditSession` (§ 2.1): a session already open doesn't see it.
 - **An official gap is an offer, not a dead end.** When the user asks for something Service

@@ -24,7 +24,7 @@ internal static class Tools
     [
         new("status",
             "The bridge and Service Studio versions, each Service Studio window (its module, the environment it's signed in to, host and name, and the user), " +
-            "Capabilities: whether openModule, addDependency, layoutFlows, the application and module tools, setReferenceTenantIdentifier and the dialog watch work with this Service Studio build, " +
+            "Capabilities: whether openModule, closeModule, addDependency, layoutFlows, the application and module tools, setReferenceTenantIdentifier and the dialog watch work with this Service Studio build, " +
             "AnsweredPrompts: the reference checks the bridge cancelled and the check's messages it closed after openModule, each with what it said, " +
             "Tabs: each module tab, whether it's busy (its queue doesn't run anything within a second, which is what Service Studio's own server means by " +
             "\"Service Studio is busy\") and the dialogs listed for it; busy with none listed means Service Studio is holding a prompt for the tab until it's in front, " +
@@ -109,6 +109,18 @@ internal static class Tools
             [Host, Module,
                 new("version", "string", "\"published\" (the default), \"latest\" for the newest upload even if unpublished, or a version number from getModuleVersions.")],
             a => Studio.OpenModule(Text(a, "host"), Required(a, "module"), Text(a, "version")),
+            ReadOnly: false),
+        new("closeModule",
+            "Closes a module's tab in Service Studio, as the tab's Close does. Use it only when Service Studio's own server has no closeModule, and only for " +
+            "a module you opened (openModule, createModule, cloneModule) or one the user asks to close. It asks nobody: where Service Studio's Close would ask, " +
+            "it refuses instead, saying why: an edit session or unmerged changes of Service Studio's own server on the module, a dialog or held prompt in its " +
+            "tab, a server operation (a publish) running on it, or unsaved changes (merged ones included; a module never published is all unsaved). " +
+            "discardChanges closes it anyway and drops those changes for good: pass it only when the user says to. A window's last module tab closes " +
+            "like any other; the window stays, on its start page. Returns the tab closed and whether changes were discarded.",
+            [Host,
+                new("module", "string", "The module open in Service Studio: " + OpenModuleForms, Required: true),
+                new("discardChanges", "boolean", "Close even with unsaved changes, which are lost (a module never published is lost whole). Only when the user says to drop them.")],
+            a => Studio.CloseModule(Text(a, "host"), Required(a, "module"), Flag(a, "discardChanges")),
             ReadOnly: false),
         new("addDependency",
             "Adds a dependency on another module's public element (an action, entity, structure, block…) to a module open in Service Studio, " +

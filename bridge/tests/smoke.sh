@@ -92,15 +92,15 @@ check "initialize echoes a supported protocol" '"2025-06-18"' "$(printf '%s' "$o
 check "initialize names the server" yes "$(printf '%s' "$out" | grep -q '"name":"servicestudio-bridge"' && echo yes || echo no)"
 
 out=$(rpc '{"jsonrpc":"2.0","id":2,"method":"tools/list"}')
-check "tools/list has 21 tools" 21 "$(printf '%s' "$out" | grep -o '"inputSchema"' | wc -l | tr -d ' ')"
-for t in status listApplications listModules getModuleVersions getConsumers getElementConsumers searchPublicElements getApplicationDependencies listReferenceable downloadModule openModule addDependency uploadModules layoutFlows createApplication updateApplication createModule cloneModule moveModule convertModule setReferenceTenantIdentifier; do
+check "tools/list has 22 tools" 22 "$(printf '%s' "$out" | grep -o '"inputSchema"' | wc -l | tr -d ' ')"
+for t in status listApplications listModules getModuleVersions getConsumers getElementConsumers searchPublicElements getApplicationDependencies listReferenceable downloadModule openModule closeModule addDependency uploadModules layoutFlows createApplication updateApplication createModule cloneModule moveModule convertModule setReferenceTenantIdentifier; do
   check "tool $t listed" yes "$(printf '%s' "$out" | grep -q "\"name\":\"$t\"" && echo yes || echo no)"
 done
-# downloadModule writes a file; openModule, addDependency, layoutFlows, createModule, cloneModule and convertModule change
+# downloadModule writes a file; openModule, closeModule, addDependency, layoutFlows, createModule, cloneModule and convertModule change
 # what's open in Service Studio, as does setReferenceTenantIdentifier; uploadModules adds versions on the server; createApplication,
 # updateApplication and moveModule change applications.
-check "twelve tools aren't read-only" 12 "$(printf '%s' "$out" | grep -o '"readOnlyHint":false' | wc -l | tr -d ' ')"
-check "open-module tools take a tabId, key or name" 7 "$(printf '%s' "$out" | grep -o "tabId, key or name" | wc -l | tr -d ' ')"
+check "thirteen tools aren't read-only" 13 "$(printf '%s' "$out" | grep -o '"readOnlyHint":false' | wc -l | tr -d ' ')"
+check "open-module tools take a tabId, key or name" 8 "$(printf '%s' "$out" | grep -o "tabId, key or name" | wc -l | tr -d ' ')"
 
 out=$(rpc '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"status","arguments":{}}}')
 check "status succeeds outside Service Studio" yes "$(printf '%s' "$out" | grep -q '"isError":false' && echo yes || echo no)"
@@ -110,13 +110,19 @@ current=$(sed -n 's/^\*\*Current version: \([0-9.]*\)\.\*\*.*/\1/p' "$repo/../se
 [ -n "$current" ] || current="(no **Current version: x.y.z.** line in BRIDGE.md)"
 check "status reports BRIDGE.md's current version" "$current" "$(printf '%s' "$out" | grep -o 'Bridge\\":\\"[0-9.]*' | sed 's/.*"//')"
 check "status shows the configured port" yes "$(printf '%s' "$out" | grep -q "Port\\\\\":$port" && echo yes || echo no)"
-check "status reports capabilities" yes "$(printf '%s' "$out" | grep -q 'Capabilities' && printf '%s' "$out" | grep -q 'AddDependency' && printf '%s' "$out" | grep -q 'DialogWatch' && printf '%s' "$out" | grep -q 'AnsweredPrompts' && printf '%s' "$out" | grep -q '"Upload' && printf '%s' "$out" | grep -q 'ConvertModule' && echo yes || echo no)"
+check "status reports capabilities" yes "$(printf '%s' "$out" | grep -q 'Capabilities' && printf '%s' "$out" | grep -q 'AddDependency' && printf '%s' "$out" | grep -q 'DialogWatch' && printf '%s' "$out" | grep -q 'AnsweredPrompts' && printf '%s' "$out" | grep -q '"Upload' && printf '%s' "$out" | grep -q 'ConvertModule' && printf '%s' "$out" | grep -q 'CloseModule' && echo yes || echo no)"
 
 out=$(rpc '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"listModules","arguments":{}}}')
 check "listModules fails cleanly outside Service Studio" yes "$(printf '%s' "$out" | grep -q '"isError":true' && echo yes || echo no)"
 
 out=$(rpc '{"jsonrpc":"2.0","id":12,"method":"tools/call","params":{"name":"openModule","arguments":{"module":"X"}}}')
 check "openModule fails cleanly outside Service Studio" yes "$(printf '%s' "$out" | grep -q '"isError":true' && echo yes || echo no)"
+
+out=$(rpc '{"jsonrpc":"2.0","id":41,"method":"tools/call","params":{"name":"closeModule","arguments":{}}}')
+check "closeModule needs the module" yes "$(printf '%s' "$out" | grep -q 'module is required' && echo yes || echo no)"
+
+out=$(rpc '{"jsonrpc":"2.0","id":42,"method":"tools/call","params":{"name":"closeModule","arguments":{"module":"X","discardChanges":true}}}')
+check "closeModule fails cleanly outside Service Studio" yes "$(printf '%s' "$out" | grep -q '"isError":true' && echo yes || echo no)"
 
 out=$(rpc '{"jsonrpc":"2.0","id":13,"method":"tools/call","params":{"name":"addDependency","arguments":{"module":"X"}}}')
 check "addDependency needs the element" yes "$(printf '%s' "$out" | grep -q 'element is required' && echo yes || echo no)"
