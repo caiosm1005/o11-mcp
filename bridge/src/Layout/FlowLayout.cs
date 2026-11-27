@@ -66,11 +66,13 @@ namespace ServiceStudioBridge.Layout
             var CROSS = 400;                 // per pair of connectors that cross
             var PRESSURE = 40; var AREACAP = 6;        // reward per half cell of area a cycle encloses, up to AREACAP: inflates the loop
             var FAR = 300; var BEAM = 80;    // search: penalty per cell a node strays beyond reach; candidates kept per step
+            var SQUAT = 200;                    // most a ring in two half-height rows may cost over one three rows or more tall
             // Cells tried for a node, relative to a placed neighbour: the 8 around it and 2 away along its row or column.
             var STEPS = new[] { -1, 0, 1 }.SelectMany(dy => new[] { -1, 0, 1 }.Select(dx => new[] { dx, dy })).Concat(new[] { new[] { -2, 0 }, new[] { 2, 0 }, new[] { 0, -2 }, new[] { 0, 2 } }).ToList();
 
             int Abs(int v) { return v < 0 ? -v : v; }
             int Min(int a, int b) { return a < b ? a : b; }
+            int Max(int a, int b) { return a > b ? a : b; }
             int Sign(int v) { return v > 0 ? 1 : v < 0 ? -1 : 0; }
             // Direction of a connector as one of 8 compass steps, clockwise from north.
             int Dir(int dx, int dy) { return Sign(dx) == 0 ? (dy < 0 ? 0 : 4) : Sign(dx) > 0 ? 2 + Sign(dy) : 6 - Sign(dy); }
@@ -476,87 +478,107 @@ namespace ServiceStudioBridge.Layout
                     foreach (var e in E) { if (!nb[e[0]].Contains(e[1])) nb[e[0]].Add(e[1]); if (!nb[e[1]].Contains(e[0])) nb[e[1]].Add(e[0]); }
                     // A state is { sort key, energy, x of each node, y of each node }. A search
                     // that finds no free cell for a node starts again keeping four times as
-                    // many arrangements; only then is the loop left to the rules.
-                    var states = new[] { new int[2 + 2 * m] }.ToList(); var width = BEAM;
-                    for (var i = 1; i < m; i++) {
-                        // bound[j]: connectors between node i and the placed node j, through nodes not placed yet
-                        var dist = seq.Select(x => -1).ToArray(); var bound = seq.Select(x => -1).ToArray();
-                        dist[i] = 0;
-                        var queue = new[] { i }.ToList();
-                        for (var head = 0; head < queue.Count; head++) foreach (var n in nb[queue[head]]) {
-                            if (n < i) { if (bound[n] < 0) bound[n] = dist[queue[head]] + 1; }
-                            else if (dist[n] < 0) { dist[n] = dist[queue[head]] + 1; queue.Add(n); }
-                        }
-                        var mine = E.Select((e, k) => k).Where(k => (E[k][0] == i && E[k][1] < i) || (E[k][1] == i && E[k][0] < i)).ToList();
-                        var old = E.Select((e, k) => k).Where(k => E[k][0] < i && E[k][1] < i).ToList();
-                        var next = new int[0].Select(q => new int[0]).ToList();
-                        foreach (var s in states) {
-                            // candidate cells: STEPS away from a placed neighbour, right of the head's column; a cell is x * 100000 + y + 50000.
-                            // The pivot of a loop that isn't left from its head goes in the head's column, below the nodes already there,
-                            // and so may the nodes between them.
-                            var low = 0;
-                            for (var j = 1; j < i; j++) if (s[2 + j] == 0 && s[2 + m + j] > low) low = s[2 + m + j];
-                            var down = column.Contains(seq[i]);
-                            var cands = nb[i].Where(n => n < i).SelectMany(n => STEPS.Select(d => (s[2 + n] + d[0]) * 100000 + s[2 + m + n] + d[1] + 50000))
-                                .Where(c => (seq[i] != pivot && c / 100000 >= 1 || down && c >= 50000 + low + 1 && c < 100000) && within[i].All(j => j >= i || c / 100000 > s[2 + j])).Distinct().OrderBy(c => Abs(c % 100000 - 50000)).ThenBy(c => -(c % 100000)).ThenBy(c => c / 100000).ToList();
-                            foreach (var cand in cands) {
-                                var cx = cand / 100000; var cy = cand % 100000 - 50000;
-                                var taken = false;
-                                for (var j = 0; j < i; j++) if (s[2 + j] == cx && s[2 + m + j] == cy) taken = true;
-                                if (taken) continue;
-                                var t = s.ToArray(); t[2 + i] = cx; t[2 + m + i] = cy;
-                                if (old.Any(k => Through(t[2 + E[k][0]], t[2 + m + E[k][0]], t[2 + E[k][1]], t[2 + m + E[k][1]], cx, cy))) continue;
-                                var cost = 0; var ok = true;
-                                foreach (var k in mine) {
-                                    var a = E[k][0]; var b = E[k][1];
-                                    var dx = t[2 + b] - t[2 + a]; var dy = t[2 + m + b] - t[2 + m + a];
-                                    for (var j = 0; j < i; j++) if (Through(t[2 + a], t[2 + m + a], t[2 + b], t[2 + m + b], t[2 + j], t[2 + m + j])) ok = false;
-                                    if (!ok) break;
-                                    var cheb = Abs(dx) > Abs(dy) ? Abs(dx) : Abs(dy);
-                                    if (!(leaf[k] && dx == 1 && dy == 0)) {
-                                        cost += (leaf[k] ? LEAF : 0) + LATERAL * Abs(dx);
-                                        if (cheb > 1) cost += (isBack[k] ? LONGBACK * (cheb - 1 < BACKCAP ? cheb - 1 : BACKCAP) : (dx == 0 || dy == 0 ? STRAIGHT : LONG) * (cheb - 1)) + (dx == 0 || dy == 0 || Abs(dx) == Abs(dy) ? 0 : OFFAXIS);
-                                        if (dy < 0 && !isBack[k]) cost += (cyc[k] ? CLIMB : UP) * -dy;
-                                        if (dy > 0 && cycle[k]) cost += DIVE;
-                                        if (fork[k] && dx != 0 && dy != 0) cost += FORKDIAG;
-                                    }
-                                    if (isBack[k] && a == i) {
-                                        // twice the area enclosed by the cycle this connector closes
-                                        var area = 0; var node = i; var hops = 0;
-                                        while (node != b && hops < m) { var prev = par[node]; area += t[2 + prev] * t[2 + m + node] - t[2 + node] * t[2 + m + prev]; node = prev; hops++; }
-                                        if (node == b) { area = Abs(area + t[2 + i] * t[2 + m + b] - t[2 + b] * t[2 + m + i]); cost -= PRESSURE * (area < AREACAP ? area : AREACAP); }
-                                    }
-                                    foreach (var k2 in old.Concat(mine.Where(q => q < k))) {
-                                        var a2 = E[k2][0]; var b2 = E[k2][1];
-                                        if (Crosses(t[2 + a], t[2 + m + a], t[2 + b], t[2 + m + b], t[2 + a2], t[2 + m + a2], t[2 + b2], t[2 + m + b2])) cost += CROSS;
-                                        // At a For Each inside the loop, only the path through it (in from
-                                        // before it, on to the node after it) and its own cycle (back in
-                                        // from its body, out along Cycle) bend: as for a loop on its own,
-                                        // the way into it doesn't turn into its Cycle.
-                                        var first = b2 == a ? k2 : k; var second = b2 == a ? k : k2;
-                                        var joint = E[first][1];
-                                        if (cyc[k] && cyc[k2] && (b2 == a || b == a2) && !(joint != 0 && isLoop[seq[joint]] && isBack[first] != cycle[second])) {
-                                            var turn = Abs(Dir(t[2 + E[first][1]] - t[2 + E[first][0]], t[2 + m + E[first][1]] - t[2 + m + E[first][0]]) - Dir(t[2 + E[second][1]] - t[2 + E[second][0]], t[2 + m + E[second][1]] - t[2 + m + E[second][0]]));
-                                            if (turn > 4) turn = 8 - turn;
-                                            cost += BEND * turn * turn;
+                    // many arrangements; null when that finds none either. In two rows
+                    // (squat), every node but the head goes in the row half a row above the
+                    // head's or the one half a row below: y counts half rows, a connector
+                    // costs what it does as drawn, and none may come within half a cell of
+                    // a node it doesn't join.
+                    int[] Search(bool squat) {
+                        var ys = squat ? 1 : 2;                      // half rows per step of y
+                        var states = new[] { new int[2 + 2 * m] }.ToList(); var width = BEAM;
+                        bool On(int ax, int ay, int bx, int by, int cx, int cy) { return squat ? Near(ax, ay, bx, by, cx, cy) : Through(ax, ay, bx, by, cx, cy); }
+                        for (var i = 1; i < m; i++) {
+                            // bound[j]: connectors between node i and the placed node j, through nodes not placed yet
+                            var dist = seq.Select(x => -1).ToArray(); var bound = seq.Select(x => -1).ToArray();
+                            dist[i] = 0;
+                            var queue = new[] { i }.ToList();
+                            for (var head = 0; head < queue.Count; head++) foreach (var n in nb[queue[head]]) {
+                                if (n < i) { if (bound[n] < 0) bound[n] = dist[queue[head]] + 1; }
+                                else if (dist[n] < 0) { dist[n] = dist[queue[head]] + 1; queue.Add(n); }
+                            }
+                            var mine = E.Select((e, k) => k).Where(k => (E[k][0] == i && E[k][1] < i) || (E[k][1] == i && E[k][0] < i)).ToList();
+                            var old = E.Select((e, k) => k).Where(k => E[k][0] < i && E[k][1] < i).ToList();
+                            var next = new int[0].Select(q => new int[0]).ToList();
+                            foreach (var s in states) {
+                                // candidate cells: STEPS away from a placed neighbour (in two rows: up to two columns
+                                // either way, in either row), right of the head's column; a cell is x * 100000 + y + 50000.
+                                // The pivot of a loop that isn't left from its head goes in the head's column, below the
+                                // nodes already there, and so may the nodes between them.
+                                var low = 0;
+                                for (var j = 1; j < i; j++) if (s[2 + j] == 0 && s[2 + m + j] > low) low = s[2 + m + j];
+                                var down = column.Contains(seq[i]);
+                                var steps = squat ? nb[i].Where(n => n < i).SelectMany(n => new[] { -2, -1, 0, 1, 2 }.SelectMany(d => new[] { -1, 1 }.Select(y => (s[2 + n] + d) * 100000 + y + 50000)))
+                                    : nb[i].Where(n => n < i).SelectMany(n => STEPS.Select(d => (s[2 + n] + d[0]) * 100000 + s[2 + m + n] + d[1] + 50000));
+                                var cands = steps
+                                    .Where(c => (seq[i] != pivot && c / 100000 >= 1 || down && c >= 50000 + low + 1 && c < 100000) && within[i].All(j => j >= i || c / 100000 > s[2 + j])).Distinct().OrderBy(c => Abs(c % 100000 - 50000)).ThenBy(c => -(c % 100000)).ThenBy(c => c / 100000).ToList();
+                                foreach (var cand in cands) {
+                                    var cx = cand / 100000; var cy = cand % 100000 - 50000;
+                                    var taken = false;
+                                    for (var j = 0; j < i; j++) if (s[2 + j] == cx && s[2 + m + j] == cy) taken = true;
+                                    if (taken) continue;
+                                    var t = s.ToArray(); t[2 + i] = cx; t[2 + m + i] = cy;
+                                    if (old.Any(k => On(t[2 + E[k][0]], t[2 + m + E[k][0]], t[2 + E[k][1]], t[2 + m + E[k][1]], cx, cy))) continue;
+                                    var cost = 0; var ok = true;
+                                    foreach (var k in mine) {
+                                        var a = E[k][0]; var b = E[k][1];
+                                        // dy in half rows; cheb, the cells it spans, in half cells
+                                        var dx = t[2 + b] - t[2 + a]; var dy = ys * (t[2 + m + b] - t[2 + m + a]);
+                                        for (var j = 0; j < i; j++) if (On(t[2 + a], t[2 + m + a], t[2 + b], t[2 + m + b], t[2 + j], t[2 + m + j])) ok = false;
+                                        if (!ok) break;
+                                        var cheb = Max(2 * Abs(dx), Abs(dy));
+                                        if (!(leaf[k] && dx == 1 && dy == 0)) {
+                                            cost += (leaf[k] ? LEAF : 0) + LATERAL * Abs(dx);
+                                            if (cheb > 2) cost += (isBack[k] ? LONGBACK * Min(cheb - 2, 2 * BACKCAP) : (dx == 0 || dy == 0 ? STRAIGHT : LONG) * (cheb - 2)) / 2 + (dx == 0 || dy == 0 || 2 * Abs(dx) == Abs(dy) ? 0 : OFFAXIS);
+                                            if (dy < 0 && !isBack[k]) cost += (cyc[k] ? CLIMB : UP) * -dy / 2;
+                                            if (dy > 0 && cycle[k]) cost += DIVE;
+                                            if (fork[k] && dx != 0 && dy != 0) cost += FORKDIAG;
+                                        }
+                                        if (isBack[k] && a == i) {
+                                            // twice the area enclosed by the cycle this connector closes
+                                            var area = 0; var node = i; var hops = 0;
+                                            while (node != b && hops < m) { var prev = par[node]; area += t[2 + prev] * t[2 + m + node] - t[2 + node] * t[2 + m + prev]; node = prev; hops++; }
+                                            if (node == b) { area = Abs(area + t[2 + i] * t[2 + m + b] - t[2 + b] * t[2 + m + i]) * ys / 2; cost -= PRESSURE * (area < AREACAP ? area : AREACAP); }
+                                        }
+                                        foreach (var k2 in old.Concat(mine.Where(q => q < k))) {
+                                            var a2 = E[k2][0]; var b2 = E[k2][1];
+                                            if (Crosses(t[2 + a], t[2 + m + a], t[2 + b], t[2 + m + b], t[2 + a2], t[2 + m + a2], t[2 + b2], t[2 + m + b2])) cost += CROSS;
+                                            // At a For Each inside the loop, only the path through it (in from
+                                            // before it, on to the node after it) and its own cycle (back in
+                                            // from its body, out along Cycle) bend: as for a loop on its own,
+                                            // the way into it doesn't turn into its Cycle.
+                                            var first = b2 == a ? k2 : k; var second = b2 == a ? k : k2;
+                                            var joint = E[first][1];
+                                            if (cyc[k] && cyc[k2] && (b2 == a || b == a2) && !(joint != 0 && isLoop[seq[joint]] && isBack[first] != cycle[second])) {
+                                                var turn = Abs(Dir(t[2 + E[first][1]] - t[2 + E[first][0]], t[2 + m + E[first][1]] - t[2 + m + E[first][0]]) - Dir(t[2 + E[second][1]] - t[2 + E[second][0]], t[2 + m + E[second][1]] - t[2 + m + E[second][0]]));
+                                                if (turn > 4) turn = 8 - turn;
+                                                cost += BEND * turn * turn;
+                                            }
                                         }
                                     }
+                                    if (!ok) continue;
+                                    var hint = 0;
+                                    for (var j = 0; j < i; j++) if (bound[j] >= 0) {
+                                        var gap = Max(2 * Abs(t[2 + j] - cx), ys * Abs(t[2 + m + j] - cy)) - 2 * bound[j];
+                                        if (gap > 0) hint += (isLoop[seq[j]] || j == 0 ? LONGBACK * Min(gap, 2 * BACKCAP) : FAR * gap) / 2;
+                                    }
+                                    t[1] = s[1] + cost; t[0] = t[1] + hint;
+                                    next.Add(t);
                                 }
-                                if (!ok) continue;
-                                var hint = 0;
-                                for (var j = 0; j < i; j++) if (bound[j] >= 0) {
-                                    var gap = (Abs(t[2 + j] - cx) > Abs(t[2 + m + j] - cy) ? Abs(t[2 + j] - cx) : Abs(t[2 + m + j] - cy)) - bound[j];
-                                    if (gap > 0) hint += isLoop[seq[j]] || j == 0 ? LONGBACK * (gap < BACKCAP ? gap : BACKCAP) : FAR * gap;
-                                }
-                                t[1] = s[1] + cost; t[0] = t[1] + hint;
-                                next.Add(t);
                             }
+                            if (next.Count == 0 && width > BEAM) return null;
+                            if (next.Count == 0) { width = 4 * BEAM; states = new[] { new int[2 + 2 * m] }.ToList(); i = 0; continue; }
+                            states = next.OrderBy(s => s[0]).Take(width).ToList();
                         }
-                        if (next.Count == 0 && width > BEAM) return new int[0][];
-                        if (next.Count == 0) { width = 4 * BEAM; states = new[] { new int[2 + 2 * m] }.ToList(); i = 0; continue; }
-                        states = next.OrderBy(s => s[0]).Take(width).ToList();
+                        return states.OrderBy(s => s[1]).First();
                     }
-                    var best = states.OrderBy(s => s[1]).First();
+                    int Crossings(int[] s) {
+                        var n = 0;
+                        for (var k = 0; k < E.Count; k++) for (var k2 = k + 1; k2 < E.Count; k2++)
+                            if (Crosses(s[2 + E[k][0]], s[2 + m + E[k][0]], s[2 + E[k][1]], s[2 + m + E[k][1]], s[2 + E[k2][0]], s[2 + m + E[k2][0]], s[2 + E[k2][1]], s[2 + m + E[k2][1]])) n++;
+                        return n;
+                    }
+                    var best = Search(false);
+                    if (best == null) return new int[0][];
                     blockEdges.AddRange(edges);
                     // Half height: the block is drawn half as tall, its rows becoming half
                     // rows, when every node stays at least a row from the others in its
@@ -569,6 +591,21 @@ namespace ServiceStudioBridge.Layout
                     foreach (var e in E) for (var j = 0; j < m && flat; j++) {
                         int ax = best[2 + e[0]], ay = best[2 + m + e[0]], bx = best[2 + e[1]], by = best[2 + m + e[1]];
                         if (j != e[0] && j != e[1] && Near(ax, ay, bx, by, best[2 + j], best[2 + m + j]) && !Near(ax, 2 * ay, bx, 2 * by, best[2 + j], 2 * best[2 + m + j])) flat = false;
+                    }
+                    // Two rows: a For Each's ring that takes three rows or more (with no
+                    // loop inside it) goes in the two half-height rows beside the For Each
+                    // instead, when the search finds an arrangement there that costs at
+                    // most SQUAT more and crosses no more connectors. So For Each → A → If
+                    // (True: B → C; False: C) → D → back has A, the If and B along the top
+                    // row and D and C along the bottom one, not C on the For Each's row and
+                    // D a row below it.
+                    if (!flat && isLoop[F] && pivot == F && members.All(x => x == F || !isLoop[x])) {
+                        var top = 0; var bottom = 0;
+                        for (var i = 1; i < m; i++) { top = Min(top, best[2 + m + i]); bottom = Max(bottom, best[2 + m + i]); }
+                        if (bottom - top >= 2) {
+                            var squat = Search(true);
+                            if (squat != null && squat[1] <= best[1] + SQUAT && Crossings(squat) <= Crossings(best)) { best = squat; flat = true; }
+                        }
                     }
                     var dys = seq.Select((x, i) => (flat ? 1 : 2) * best[2 + m + i]).ToArray();
                     // Centred: when the For Each's connectors in the block (its Cycle and

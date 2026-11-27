@@ -163,8 +163,23 @@ So that a result can be explained, not reproduced by hand:
     diamond: the first sits half a row above the For Each's row, the
     second on it and the third half a row below. A ring with nodes in
     the next row of the same column (four nodes or more, usually) keeps
-    whole rows. The cells around it are the same either way: a node half
-    a row off still keeps the rows above and below it in its column clear;
+    whole rows, unless it fits in two rows (next). The cells around it are
+    the same either way: a node half a row off still keeps the rows above
+    and below it in its column clear;
+  - a ring that takes **three rows or more** goes in **two half-height
+    rows** instead — every node but the For Each half a row above or half
+    a row below the For Each's row — when a second search finds an
+    arrangement there that costs at most about a row's worth more and
+    has no more crossings. That search scores connectors as they are
+    drawn at half height, so one that drops a row across a column is a
+    diagonal rather than a long slant, and keeps every connector more
+    than half a cell from the nodes it doesn't join. So
+    For Each → Aggregate → If (True: Assign A → Assign B; False:
+    Assign B) → List Append → back has the Aggregate, the If and
+    Assign A along the top row and Assign B and the List Append, to its
+    left, along the bottom one, rather than Assign B on the For Each's
+    row and the List Append a row below it. Only for a For Each with no
+    loop inside its ring;
   - a ring is **centred on its For Each** when the For Each's own
     connectors in it — its `Cycle` and the ones back to it — reach a row
     further below the For Each's row than above it: the ring moves half a
@@ -440,7 +455,17 @@ So that a result can be explained, not reproduced by hand:
   through a diamond's branch, and a centred ring pushed a join down a
   row; centring down, or by the ring's whole height rather than the For
   Each's connectors, made flows taller or bent mirrored diagonals. Not
-  dry-run against a live module.
+  dry-run against a live module. Rings in two half-height rows
+  (2026-11-27): against the mock, on the same 10,700 flows, 31 changed,
+  4 better on the score and none worse; crossings and connectors through
+  or within half a cell of a node unchanged or fewer, note placement
+  unchanged but for one link across a note, more connectors at half a
+  row's slope; the hand-drawn fixtures and live flows unchanged, second
+  runs moved nothing. Taking two rows whenever the search finds them
+  changed a thousand flows and added crossings to 644; of the
+  arrangements within a row's worth of the taller one, all but one (it
+  added a crossing) looked as good or better. Not dry-run against a live
+  module.
 - **Long connectors can still pass through nodes.** A connector running
   straight down a column to a join below other nodes of that column (an
   early exit from high up), or a long diagonal into a join with many
