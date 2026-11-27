@@ -41,8 +41,10 @@ So that a result can be explained, not reproduced by hand:
   are Y = 914, 2743, 4571, … `Start` is the exception: it stays at
   (3196, 800), where Service Studio creates it, so the first node below it
   is at Y = 2743. The only nodes between two rows, half a row (four grid
-  dots) off, are those of a loop's ring drawn at half height (*For Each
-  loops* below).
+  dots) off, are those of a loop's ring drawn at half height or centred
+  on its For Each (*For Each loops* below), and the only nodes between two
+  columns, half a column off, are the branches of an If that opens into a
+  diamond (*Branches*).
 - **Main path.** Straight down from `Start`.
 - **Branches.** At an **If**, one target continues straight
   down and the other goes one column to the right, **starting on that
@@ -68,7 +70,19 @@ So that a result can be explained, not reproduced by hand:
   single Assign that rejoins sends that Assign down, and its other
   branch, with its guards and its loop, goes to the right and comes back
   into the join from beside it. Of two such
-  chains, the shorter continues down (on a tie, the last). The
+  chains, the shorter continues down (on a tie, the last). When the two
+  are the **same length** and meet at a node nothing else leads to, the
+  If **opens into a diamond** instead: both branches start a row below
+  the If, half a column either side of its column (`False` left, `True`
+  right), and meet again below it, so `If → Check A / Check B → Next`
+  reads as two parallel steps. That holds only when the column to the
+  left and the one to the right are free from the row below the If down,
+  nothing placed in the column to the left or in a column to the right
+  still leads to a node not placed yet (its connector, drawn later, would
+  come down past a branch), and the node they meet at isn't a loop's head
+  (its ring may reach up beside them). The column to the left stays clear
+  beside the left branch. Branches of different lengths keep the layout
+  above. The
   only side branch of a node **runs along that node's row** instead of
   down its column when it is a plain chain that ends separately — every
   node of it leads to at most one node, nothing else leads into it, none
@@ -151,6 +165,19 @@ So that a result can be explained, not reproduced by hand:
     the next row of the same column (four nodes or more, usually) keeps
     whole rows. The cells around it are the same either way: a node half
     a row off still keeps the rows above and below it in its column clear;
+  - a ring is **centred on its For Each** when the For Each's own
+    connectors in it — its `Cycle` and the ones back to it — reach a row
+    further below the For Each's row than above it: the ring moves half a
+    row up so the two mirror each other. So a For Each with two nodes in
+    its body is a flat triangle, the first half a row above the For
+    Each's row and the second half a row below, and one with six is a flat
+    rectangle. Not when that turns a straight connector of an If or Switch
+    diagonal, brings a connector within half a cell of a node, would put
+    the For Each on another row than uncentred (lower costs a row; higher
+    can tuck the ring in across a connector), or while a node placed to
+    the right still leads to a node not placed yet (its connector, drawn
+    later, could run through a node moved half a row). Never down: half a
+    row lower at the bottom would push the node below down a whole row;
   - the **`Cycle` connector leaves upwards or sideways**: going down costs
     extra, so it does only when that is clearly better. A loop of
     For Each → Aggregate → If (True back to the For Each) has the Aggregate
@@ -401,7 +428,19 @@ So that a result can be explained, not reproduced by hand:
   took the cell a join's own side branch needs, and centring under a
   column holding two of the branches ran the upper one's connector
   through the nodes between: more flows came out worse than better. Not
-  yet dry-run against a live module.
+  yet dry-run against a live module. Ifs opening into a diamond and rings
+  centred on their For Each (2026-11-27): against the mock, on 10,700
+  random flows with and without loops (1500 with notes), 208 changed, 16
+  a row shorter and none worse on the score above; crossings and
+  connectors through or within half a cell of a node unchanged, note
+  placement unchanged, more diagonals (the two shapes are made of them);
+  of the hand-drawn fixtures only a diamond-shaped If and a six-node ring
+  changed, into the new shapes, and second runs moved nothing. Without
+  the rules for connectors drawn later, a long diagonal ran exactly
+  through a diamond's branch, and a centred ring pushed a join down a
+  row; centring down, or by the ring's whole height rather than the For
+  Each's connectors, made flows taller or bent mirrored diagonals. Not
+  dry-run against a live module.
 - **Long connectors can still pass through nodes.** A connector running
   straight down a column to a join below other nodes of that column (an
   early exit from high up), or a long diagonal into a join with many
@@ -477,7 +516,10 @@ So that a result can be explained, not reproduced by hand:
 then:
 
 - keep it **integer-only** — no floating point anywhere, so the same flow comes out identical on
-  every machine; rows are counted in half rows for that, every node of the flow on an even one —
+  every machine; rows are counted in half rows for that, every node of the flow on an even one,
+  and a diamond's branches keep whole columns, drawn half a column left only at the end (so the
+  connector checks see them a little right of where they're drawn: what keeps later connectors
+  off them is the rule that nothing to the right still leads on) —
   and **stable**: a second run on its own output must move nothing. A node's position depends on
   the flow's connections, not on where the node was — the only things read from the old positions
   are the left-to-right order of handler flows and the row of an unlinked note. Never let a result

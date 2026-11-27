@@ -25,7 +25,8 @@ namespace ServiceStudioBridge.Layout
             // ---- Algorithm -------------------------------------------------------------
             // The grid is Service Studio's own snap grid: 12800/7 (about 1828.57) per column and per row.
             // Rows are counted in half rows: every node of the flow sits on a whole row (an even
-            // half row), except the nodes of a loop's ring drawn at half height (3a).
+            // half row), except the nodes of a loop's ring drawn at half height or centred (3a).
+            // Columns stay whole: a split If's branches (3b) are drawn half a column left of theirs.
             var X0 = 3200; var PITCH_N = 12800; var PITCH_D = 7;
             var START_X = 3196; var START_Y = 800;     // Start stays where Service Studio creates it
             var ROOT_GAP = 2;                // columns between the main flow and each exception handler flow
@@ -333,6 +334,7 @@ namespace ServiceStudioBridge.Layout
                 // 3. Placement on a grid of columns and rows.
                 var col = new int[N]; var row = new int[N]; var placed = new bool[N];
                 var ringed = new bool[N];                            // placed as part of a For Each loop's block
+                var half = new bool[N];                              // a branch of a split If (3b): drawn half a column left of its column
                 var free = new int[(N + 2) * (ROOT_GAP + 2)];        // per column, the first free half row: a row below its lowest node
                 var top = -ROOT_GAP;                                 // rightmost column used so far
                 var reach = 0;                                       // rightmost column used by the branch being placed
@@ -379,8 +381,9 @@ namespace ServiceStudioBridge.Layout
                 //     goes on down that column after the loop; every other node of the
                 //     loop goes to the right of it.
                 var pivot = -1; var after = -1;                      // set by Block(): the loop's pivot, and the node after the loop
+                var centred = 0;                                     // set by Block(): half rows its block moved to centre on the head
                 int[][] Block(int F) {
-                    blockEdges.Clear(); pivot = F; after = -1;
+                    blockEdges.Clear(); pivot = F; after = -1; centred = 0;
                     // The cycle of a loop that isn't a For Each: every node that leads to a
                     // connector back to the head without passing through the head,
                     // through the cycles of the loops inside it too.
@@ -567,7 +570,32 @@ namespace ServiceStudioBridge.Layout
                         int ax = best[2 + e[0]], ay = best[2 + m + e[0]], bx = best[2 + e[1]], by = best[2 + m + e[1]];
                         if (j != e[0] && j != e[1] && Near(ax, ay, bx, by, best[2 + j], best[2 + m + j]) && !Near(ax, 2 * ay, bx, 2 * by, best[2 + j], 2 * best[2 + m + j])) flat = false;
                     }
-                    return seq.Skip(1).Select((x, i) => new[] { x, best[3 + i], (flat ? 1 : 2) * best[3 + m + i] }).ToArray();
+                    var dys = seq.Select((x, i) => (flat ? 1 : 2) * best[2 + m + i]).ToArray();
+                    // Centred: when the For Each's connectors in the block (its Cycle and
+                    // the ones back to it) reach a row further below its row than above it,
+                    // the block moves half a row up so they mirror each other, unless that
+                    // turns a straight connector of an If or Switch diagonal or brings a
+                    // connector within half a cell of a node (and, in Place, unless it would
+                    // then go lower). So For Each → A → B → back is a flat triangle, A half a
+                    // row above the For Each's row and B half a row below. Never down: half
+                    // a row lower at the bottom would push a node below it down a whole row.
+                    var centre = 0;
+                    if (isLoop[F] && m > 1) {
+                        var ends = E.Where(e => e[0] == 0 || e[1] == 0).Select(e => dys[e[0] == 0 ? e[1] : e[0]]).ToList();
+                        var lowest = ends.Min(); var highest = ends.Max();
+                        var move = lowest + highest == 2 ? -1 : 0;
+                        var keeps = move != 0;
+                        for (var k = 0; k < E.Count && keeps; k++) {
+                            if (E[k][0] != 0 && E[k][1] != 0) continue;
+                            var other = E[k][0] == 0 ? E[k][1] : E[k][0];
+                            if (fork[k] && dys[other] == 0) keeps = false;
+                            for (var j = 1; j < m && keeps; j++) if (j != other
+                                && Near(0, 0, best[2 + other], dys[other] + move, best[2 + j], dys[j] + move) && !Near(0, 0, best[2 + other], dys[other], best[2 + j], dys[j])) keeps = false;
+                        }
+                        if (keeps) centre = move;
+                        centred = centre;
+                    }
+                    return seq.Skip(1).Select((x, i) => new[] { x, best[3 + i], dys[i + 1] + centre }).ToArray();
                 }
 
                 // 3b. Everything else is placed by rule, one node at a time.
@@ -618,7 +646,7 @@ namespace ServiceStudioBridge.Layout
                     // a branch into an end: it leads only there, isn't part of a loop's
                     // block, every connector into it comes straight down its column, and
                     // nothing is below it in its column.
-                    bool Movable(int p) { return !isLoop[p] && !ringed[p] && outs[p].Count == 1 && preds[p].Count > 0 && preds[p].All(q => col[q] == col[p] && row[q] < row[p]) && free[col[p]] == row[p] + 2; }
+                    bool Movable(int p) { return !isLoop[p] && !ringed[p] && !half[p] && outs[p].Count == 1 && preds[p].Count > 0 && preds[p].All(q => col[q] == col[p] && row[q] < row[p]) && free[col[p]] == row[p] + 2; }
                     if (preds[u].Count > 1) {
                         var jl = preds[u].Min(p => col[p]); var jh = preds[u].Max(p => col[p]);
                         int JoinRow(int k) { var q = preds[u].Max(p => Abs(col[p] - k) == 1 ? row[p] : row[p] + 2); return q + (q & 1); }
@@ -631,6 +659,7 @@ namespace ServiceStudioBridge.Layout
                         : order.Any(s => !placed[s] && back.Contains(s * N + u)) ? Block(u) : new int[0][];
                     var links = block.Length > 0 ? blockEdges.ToList() : blockEdges.Take(0).ToList();
                     var loopPivot = block.Length > 0 ? pivot : -1; var loopNext = block.Length > 0 ? after : -1;
+                    var loopCentre = block.Length > 0 ? centred : 0;
                     var inBlock = new bool[N]; var dxOf = new int[N]; var dyOf = new int[N];
                     foreach (var b in block) { inBlock[b[0]] = true; dxOf[b[0]] = b[1]; dyOf[b[0]] = b[2]; }
                     // Targets this node can place now, and targets still waiting for another branch.
@@ -721,7 +750,7 @@ namespace ServiceStudioBridge.Layout
                     if (preds[u].Count > 1)
                         for (var shifts = 0; shifts < OWN_PUSH; shifts++) {
                             var jr = r;
-                            var w = order.Where(p => placed[p] && preds[u].Contains(p) && col[p] != c && !isLoop[p] && !ringed[p]
+                            var w = order.Where(p => placed[p] && preds[u].Contains(p) && col[p] != c && !isLoop[p] && !ringed[p] && !half[p]
                                     && outs[p].All(t => t == u || !placed[t])
                                     && order.Any(o => placed[o] && o != p && Through(col[p], row[p], c, jr, col[o], row[o])))
                                 .OrderBy(p => row[p]).ThenBy(p => col[p]).DefaultIfEmpty(-1).First();
@@ -747,13 +776,30 @@ namespace ServiceStudioBridge.Layout
                     // branch of a Switch's fan, like a join, is pushed only by an exact hit:
                     // the fan's connectors pass close to each other's nodes by design.
                     var ends = order.Where(w => placed[w] && col[w] != c && (outs[w].Contains(u) || outs[u].Contains(w))).ToList();
-                    for (var tries = 0; tries < 4 * N + 4; tries++) {
-                        if ((r >= High() || Lean(r)) && block.All(b => r + b[2] >= 0 && r + b[2] >= free[c + b[1]])
-                            && !drawn.Any(s => (level ? Through(s[0], s[1], s[2], s[3], c, r) : Near(s[0], s[1], s[2], s[3], c, r)) || block.Any(b => Near(s[0], s[1], s[2], s[3], c + b[1], r + b[2])))
-                            && (tries >= OWN_PUSH || !ends.Any(w => order.Any(o => placed[o] && o != w && (preds[u].Count > 1 || level ? Through(col[w], row[w], c, r, col[o], row[o]) : tries < 3 ? Near(col[w], row[w], c, r, col[o], row[o]) : Through(col[w], row[w], c, r, col[o], row[o])))))
-                            && !links.Any(e => order.Any(o => placed[o] && Through(c + dxOf[e[0]], r + dyOf[e[0]], c + dxOf[e[1]], r + dyOf[e[1]], col[o], row[o])))) break;
-                        r += 2;
+                    int Descend(int from) {
+                        var at = from;
+                        for (var tries = 0; tries < 4 * N + 4; tries++) {
+                            if ((at >= High() || Lean(at)) && block.All(b => at + b[2] >= 0 && at + b[2] >= free[c + b[1]])
+                                && !drawn.Any(s => (level ? Through(s[0], s[1], s[2], s[3], c, at) : Near(s[0], s[1], s[2], s[3], c, at)) || block.Any(b => Near(s[0], s[1], s[2], s[3], c + b[1], at + b[2])))
+                                && (tries >= OWN_PUSH || !ends.Any(w => order.Any(o => placed[o] && o != w && (preds[u].Count > 1 || level ? Through(col[w], row[w], c, at, col[o], row[o]) : tries < 3 ? Near(col[w], row[w], c, at, col[o], row[o]) : Through(col[w], row[w], c, at, col[o], row[o])))))
+                                && !links.Any(e => order.Any(o => placed[o] && Through(c + dxOf[e[0]], at + dyOf[e[0]], c + dxOf[e[1]], at + dyOf[e[1]], col[o], row[o])))) break;
+                            at += 2;
+                        }
+                        return at;
                     }
+                    // A block centred on its head (3a) moves back unless its head goes on the
+                    // same row either way (lower costs a row, higher can tuck the ring in
+                    // across a connector), and while a node placed to the right still leads
+                    // to a node not placed yet: that connector, drawn later, could run
+                    // through a node moved half a row.
+                    void Shift(int by) { foreach (var b in block) { b[2] += by; dyOf[b[0]] = b[2]; } }
+                    var centredRow = Descend(r);
+                    if (loopCentre != 0) {
+                        Shift(-loopCentre);
+                        var plainRow = Descend(r);
+                        if (pending || plainRow != centredRow) centredRow = plainRow; else Shift(loopCentre);
+                    }
+                    r = centredRow;
                     foreach (var end in ends) drawn.Add(new[] { col[end], row[end], c, r });
                     col[u] = c; row[u] = r; placed[u] = true; free[c] = r + 2;
                     // The last node of a branch in a column beside an end where branches
@@ -808,15 +854,40 @@ namespace ServiceStudioBridge.Layout
                         foreach (var v in ready) if (!placed[v]) Place(v, c, r + 2, false, false);
                         return;
                     }
-                    // Side branches, left to right, each starting on this node's row. The
-                    // only side branch of a node runs along that row to the right when it
-                    // is a plain chain that ends separately and its cells are free.
+                    // A split: an If whose two branches are plain chains of the same length
+                    // that rejoin at a node nothing else leads to opens into a diamond. Both
+                    // branches start a row below the If, half a column either side of it
+                    // (False left, True right), and meet again below it. They are placed as
+                    // if False went straight down and True one column to the right, then
+                    // drawn half a column left; the column left of this one is kept clear
+                    // beside them. Only when that column and the next one are free from the
+                    // row below the If down, nothing placed in the column to the left or in
+                    // a column to the right still leads to a node not placed yet (its
+                    // connector, drawn later, would come down past a branch), and the node
+                    // they meet at isn't a loop's head (its ring may reach up beside them).
+                    var split = false;
+                    if (!isSwitch[u] && !isLoop[u] && block.Length == 0 && !across && !level && !detour && !pending && outs[u].Count == 2 && sides.Count == 1 && spine >= 0) {
+                        var right = Rejoin(u, sides[0]); var left = Rejoin(u, spine);
+                        if (right.Length > 0 && right.Length == left.Length) {
+                            var meet = outs[right[right.Length - 1]][0];
+                            split = outs[left[left.Length - 1]][0] == meet && preds[meet].Count == 2 && !isLoop[meet] && !order.Any(q => back.Contains(q * N + meet)) && free[c + 1] <= r + 2
+                                && (c == 0 || free[c - 1] <= r + 2 && !order.Any(p => placed[p] && col[p] == c - 1 && outs[p].Any(t => !placed[t] && !back.Contains(p * N + t))));
+                            if (split) {
+                                foreach (var x in right.Concat(left)) half[x] = true;
+                                if (c > 0 && r + 2 * left.Length + 2 > free[c - 1]) free[c - 1] = r + 2 * left.Length + 2;
+                            }
+                        }
+                    }
+                    // Side branches, left to right, each starting on this node's row (a split's
+                    // a row below it). The only side branch of a node runs along that row to
+                    // the right when it is a plain chain that ends separately and its cells
+                    // are free.
                     var next = c + 1;
                     foreach (var side in sides) {
                         if (placed[side]) continue;
                         var keep = reach; reach = next;
                         var chain = sides.Count == 1 ? Chain(u, side) : new int[0];
-                        Place(side, next, r, chain.Length > 1 && Fits(chain, next, r), false);
+                        Place(side, next, split ? r + 2 : r, !split && chain.Length > 1 && Fits(chain, next, r), false);
                         next = reach + 1;
                         if (keep > reach) reach = keep;
                     }
@@ -825,7 +896,7 @@ namespace ServiceStudioBridge.Layout
                 foreach (var root0 in roots) if (!placed[root0]) { reach = 0; Place(root0, top + ROOT_GAP, 0, false, false); }
                 foreach (var rest in order) if (!placed[rest]) { reach = 0; Place(rest, top + ROOT_GAP, 0, false, false); }
 
-                var newX = order.Select(i => isStart[i] ? START_X : X0 + (2 * PITCH_N * col[i] + PITCH_D) / (2 * PITCH_D)).ToArray();
+                var newX = order.Select(i => isStart[i] ? START_X : X0 + (int)FloorDiv(2L * PITCH_N * col[i] - (half[i] ? PITCH_N : 0) + PITCH_D, 2 * PITCH_D)).ToArray();
                 var newY = order.Select(i => isStart[i] ? START_Y : (PITCH_N * (row[i] + 1) + PITCH_D) / (2 * PITCH_D)).ToArray();
                 var moved = 0;
                 foreach (var i in order) if (oldX[i] != newX[i] || oldY[i] != newY[i]) { moved++; code[i].X = newX[i]; code[i].Y = newY[i]; }
@@ -881,7 +952,10 @@ namespace ServiceStudioBridge.Layout
                     var baseY = anchor >= 0 ? AxisBest(PullY(j), 1, noteH[j])
                         : order.Where(n => oldY[n] <= m.Y).OrderByDescending(n => oldY[n]).ThenBy(n => n).Select(n => newY[n]).DefaultIfEmpty(START_Y).First();
                     var flowCol = anchor >= 0 ? col[owner[anchor]] : 0;
-                    return new { j, baseY, isLinked = anchor >= 0, labelX = X0 + (2 * PITCH_N * flowCol + PITCH_D) / (2 * PITCH_D) - LABEL_GAP };
+                    // Half a column further left when a split's branch is drawn left of that column.
+                    var flowRoot = anchor >= 0 ? owner[anchor] : roots.Count > 0 ? roots[0] : -1;
+                    var aside = order.Any(n => half[n] && col[n] == flowCol && owner[n] == flowRoot) ? PITCH_N : 0;
+                    return new { j, baseY, isLinked = anchor >= 0, labelX = X0 + (int)FloorDiv(2L * PITCH_N * flowCol - aside + PITCH_D, 2 * PITCH_D) - LABEL_GAP };
                 }).Where(q => noteIsLabel[q.j]).ToList();
                 var stacked = new int[0].Select(q => new int[3]).ToList();
                 foreach (var label in labelInfo.OrderBy(q => q.isLinked ? 0 : 1).ThenBy(q => q.isLinked ? q.baseY : noteY0[q.j]).ThenBy(q => noteY0[q.j]).ThenBy(q => noteX0[q.j]).ThenBy(q => q.j)) {
